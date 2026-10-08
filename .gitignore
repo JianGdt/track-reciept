@@ -1,0 +1,14 @@
+node_modules/
+.next/
+.expo/
+.turbo/
+dist/
+.env*
+!.env.example
+*.tsbuildinfo
+
+# Markdown files at any directory depth
+*.[mM][dD]
+
+# Firebase service-account credentials
+*firebase-adminsdk*.json

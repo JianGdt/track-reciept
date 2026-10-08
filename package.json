@@ -1,0 +1,21 @@
+{
+  "name": "receipt-vault",
+  "private": true,
+  "packageManager": "pnpm@10.28.2",
+  "scripts": {
+    "dev": "pnpm --filter @receipt-vault/web dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "tsx --test tests/*.test.ts",
+    "storage:migrate": "tsx apps/web/scripts/migrate-storage.ts",
+    "mobile": "pnpm --filter @receipt-vault/mobile start",
+    "format": "prettier --write apps packages tests package.json turbo.json pnpm-workspace.yaml"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "prettier": "^3.9.9",
+    "tsx": "^4.20.0",
+    "turbo": "^2.5.0",
+    "typescript": "^5.9.2"
+  }
+}

@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+ match /databases/{database}/documents {
+  // Better Auth and all receipt operations run through the authenticated API.
+  // Admin SDK bypasses rules; every API route validates the Better Auth session
+  // and scopes document paths to its user ID. Direct client access is denied.
+  match /{document=**} { allow read, write: if false; }
+ }
+}

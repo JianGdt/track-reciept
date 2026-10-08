@@ -1,0 +1,8 @@
+rules_version = '2';
+service firebase.storage {
+ match /b/{bucket}/o {
+  // Upload/delete require a Better Auth session in the API. Viewing uses
+  // server-issued five-minute signed URLs, never public download tokens.
+  match /{allPaths=**} { allow read, write: if false; }
+ }
+}

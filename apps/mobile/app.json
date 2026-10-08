@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "ReceiptVault",
+    "slug": "receipt-vault",
+    "scheme": "receiptvault",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.receiptvault.app"
+    },
+    "android": { "package": "com.receiptvault.app" },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Choose receipt photos to save in your vault.",
+          "cameraPermission": "Take photos of your receipts.",
+          "microphonePermission": false
+        }
+      ],
+      "expo-secure-store"
+    ]
+  }
+}
