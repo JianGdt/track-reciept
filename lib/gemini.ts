@@ -1,6 +1,10 @@
 import "server-only";
 import { CurrencySchema, type ScanDto } from "@/lib/shared";
-import { ScanError, parseReceiptResponse } from "./gemini-response";
+import {
+  ScanError,
+  parseReceiptResponse,
+  providerScanError,
+} from "./gemini-response";
 export async function extractReceipt(bytes: Buffer): Promise<ScanDto> {
   // One attempt per reservation: provider failures must not amplify spend.
   return extractWithModel(
@@ -13,7 +17,13 @@ async function extractWithModel(
   model: string,
 ): Promise<ScanDto> {
   const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new ScanError(503, "Receipt scanning is not configured.");
+  if (!key)
+    throw new ScanError(
+      503,
+      "Receipt scanning is not configured.",
+      false,
+      "SCAN_NOT_CONFIGURED",
+    );
   let response: Response;
   try {
     response = await fetch(
@@ -89,31 +99,17 @@ async function extractWithModel(
       },
     );
   } catch (error) {
-    throw new ScanError(
+    const timedOut =
       error instanceof Error &&
-        ["TimeoutError", "AbortError"].includes(error.name)
-        ? 504
-        : 502,
+      ["TimeoutError", "AbortError"].includes(error.name);
+    throw new ScanError(
+      timedOut ? 504 : 502,
       "The scanner could not connect or timed out. Please retry the scan.",
       true,
+      timedOut ? "SCAN_TIMEOUT" : "SCAN_CONNECTION_FAILED",
     );
   }
-  if (response.status === 429)
-    throw new ScanError(
-      429,
-      "The scanning service has reached its usage limit. Please try again later.",
-    );
-  if ([400, 401, 403, 404].includes(response.status))
-    throw new ScanError(
-      503,
-      "The scanning service configuration was rejected. Check the Gemini key, model, and API access.",
-    );
-  if (!response.ok)
-    throw new ScanError(
-      502,
-      "The scanning service is temporarily unavailable. Please retry the scan.",
-      response.status >= 500,
-    );
+  if (!response.ok) throw providerScanError(response.status);
   let data;
   try {
     data = await response.json();
@@ -121,6 +117,8 @@ async function extractWithModel(
     throw new ScanError(
       502,
       "The scanner returned an incomplete result. Please retry the scan.",
+      true,
+      "SCAN_INVALID_JSON",
     );
   }
   return parseReceiptResponse(data);

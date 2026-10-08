@@ -34,6 +34,7 @@ export function withAuth(
     let uid: string | undefined;
     let response: Response;
     let code: string | undefined;
+    let providerStatus: number | undefined;
     let rate: { limit: number; remaining: number; reset: number } | undefined;
     try {
       if (
@@ -55,6 +56,7 @@ export function withAuth(
       const id = params.id === undefined ? "" : IdSchema.parse(params.id);
       response = await handler(request, { uid, requestId, id });
     } catch (error) {
+      if (error instanceof ServiceError) providerStatus = error.providerStatus;
       if (error instanceof ServiceError && error.rate) rate = error.rate;
       const validation = error instanceof z.ZodError;
       const expected =
@@ -116,6 +118,7 @@ export function withAuth(
         status: response.status,
         durationMs: Date.now() - start,
         code,
+        providerStatus,
       }),
     );
     return response;

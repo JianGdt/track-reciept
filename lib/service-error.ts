@@ -5,6 +5,7 @@ export class ServiceError extends Error {
     public code?: string,
     public retryAfter?: number,
     public rate?: { limit: number; remaining: number; reset: number },
+    public providerStatus?: number,
   ) {
     super(message);
   }

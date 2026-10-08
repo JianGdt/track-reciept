@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseReceiptResponse } from "../lib/gemini-response";
+import {
+  parseReceiptResponse,
+  providerScanError,
+} from "../lib/gemini-response";
 import { receiptSchema } from "../lib/shared";
 const fields = {
   merchant: "Sample store",
@@ -10,6 +13,27 @@ const fields = {
   category: "food",
   confidence: 0.95,
 };
+
+test("provider outages retain the upstream status and a manual retry delay", () => {
+  for (const status of [500, 502, 503, 504]) {
+    const error = providerScanError(status);
+    assert.equal(error.status, 502);
+    assert.equal(error.code, "SCAN_PROVIDER_UNAVAILABLE");
+    assert.equal(error.providerStatus, status);
+    assert.equal(error.retryAfter, 30);
+    assert.equal(error.retryable, true);
+  }
+  const quota = providerScanError(429);
+  assert.equal(quota.status, 429);
+  assert.equal(quota.retryAfter, 60);
+  for (const status of [400, 401, 403, 404]) {
+    const error = providerScanError(status);
+    assert.equal(error.code, "SCAN_CONFIG_REJECTED");
+    assert.equal(error.retryable, false);
+    assert.equal(error.retryAfter, undefined);
+    assert.equal(error.providerStatus, status);
+  }
+});
 function response(value: unknown) {
   return {
     candidates: [
@@ -69,7 +93,7 @@ test("malformed output and invalid fields are scanner errors, not unreadable pho
   assert.throws(
     () =>
       parseReceiptResponse({ candidates: [{ finishReason: "MAX_TOKENS" }] }),
-    { status: 422 },
+    { status: 502, code: "SCAN_OUTPUT_LIMIT" },
   );
 });
 
@@ -111,4 +135,32 @@ test("overloads fall back once, while unreadable images and configuration failur
     { status: 503 },
   );
   assert.equal(calls, 2);
+});
+
+test("invalid provider envelopes fail safely and blocked photos remain input errors", () => {
+  for (const data of [
+    null,
+    [],
+    "secret upstream text",
+    { candidates: [null] },
+    { candidates: [{ content: { parts: "bad" } }] },
+  ]) {
+    assert.throws(() => parseReceiptResponse(data), {
+      status: 502,
+      code: "SCAN_INVALID_RESPONSE",
+    });
+  }
+  assert.throws(() => parseReceiptResponse({ candidates: [] }), {
+    status: 502,
+    code: "SCAN_INCOMPLETE_RESPONSE",
+  });
+  assert.throws(
+    () => parseReceiptResponse({ promptFeedback: { blockReason: "SAFETY" } }),
+    { status: 422, code: "SCAN_BLOCKED" },
+  );
+  assert.throws(
+    () =>
+      parseReceiptResponse(response({ ...fields, purchaseDate: "10/08/2026" })),
+    { status: 502, code: "SCAN_INVALID_FIELDS" },
+  );
 });

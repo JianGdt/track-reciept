@@ -157,7 +157,14 @@ export async function scanReceipt(uid: string, id: string) {
           raw = await extractReceipt(bytes);
         } catch (error) {
           if (error instanceof ScanError)
-            throw new ServiceError(error.status, error.message, "SCAN_FAILED");
+            throw new ServiceError(
+              error.status,
+              error.message,
+              error.code,
+              error.retryAfter ?? (error.retryable ? 30 : undefined),
+              undefined,
+              error.providerStatus,
+            );
           throw new ServiceError(
             502,
             "Could not read the receipt. Please retry.",
