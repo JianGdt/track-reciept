@@ -8,9 +8,9 @@ import {
   rateLimit,
   listReceipts,
   saveReceipt,
-} from "../apps/web/lib/receipt-repository";
-import { once } from "../apps/web/lib/idempotency";
-import { ServiceError } from "../apps/web/lib/service-error";
+} from "../lib/receipt-repository";
+import { once } from "../lib/idempotency";
+import { ServiceError } from "../lib/service-error";
 
 async function main() {
   if (process.env.RUN_LIVE_CHECKS !== "1")

@@ -9,7 +9,7 @@ if (process.env.RUN_LIVE_CHECKS !== "1")
   );
 const base = process.env.TEST_API_URL || "http://localhost:3000";
 const require = createRequire(
-  new URL("../apps/web/package.json", import.meta.url),
+  new URL("../package.json", import.meta.url),
 );
 const sharp = require("sharp");
 const users = [];

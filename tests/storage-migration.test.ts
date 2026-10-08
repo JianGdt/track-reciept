@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { migrateStorage } from "../apps/web/scripts/storage-migration";
+import { migrateStorage } from "../scripts/storage-migration";
 
 function fixture(targetContent?: string) {
   const target = new Map<string, string>();

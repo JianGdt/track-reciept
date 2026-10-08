@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import sharp from "../apps/web/node_modules/sharp";
-import { prepareReceiptImage } from "../apps/web/lib/receipt-image";
+import sharp from "../node_modules/sharp";
+import { prepareReceiptImage } from "../lib/receipt-image";
 test("server decoding removes EXIF and creates a bounded private thumbnail", async () => {
   const original = await sharp({
     create: { width: 2000, height: 1000, channels: 3, background: "white" },
@@ -22,7 +22,7 @@ test("fake JPEG headers and oversized uploads are rejected before storage", asyn
     prepareReceiptImage(Buffer.from([255, 216, 255, 0, 1])),
     { status: 415 },
   );
-  await assert.rejects(prepareReceiptImage(Buffer.alloc(5 * 1024 * 1024 + 1)), {
+  await assert.rejects(prepareReceiptImage(Buffer.alloc(4 * 1024 * 1024 + 1)), {
     status: 413,
   });
 });

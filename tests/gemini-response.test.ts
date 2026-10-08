@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseReceiptResponse } from "../apps/web/lib/gemini-response";
-import { receiptSchema } from "../packages/shared/src";
+import { parseReceiptResponse } from "../lib/gemini-response";
+import { receiptSchema } from "../lib/shared";
 const fields = {
   merchant: "Sample store",
   purchaseDate: "2026-10-08",
@@ -75,7 +75,7 @@ test("malformed output and invalid fields are scanner errors, not unreadable pho
 
 test("overloads fall back once, while unreadable images and configuration failures do not", async () => {
   const { ScanError, withScanFallback } =
-    await import("../apps/web/lib/gemini-response");
+    await import("../lib/gemini-response");
   const expected = parseReceiptResponse(response(fields));
   let calls = 0;
   const fallback = async () => {

@@ -8,7 +8,7 @@ import {
   toMinor,
   fromMinor,
   qk,
-} from "../packages/shared/src";
+} from "../lib/shared";
 const receipt = {
   id: "ce2cc9dd-e6c1-4c8c-b2c3-33c14d02fed1",
   merchant: "Shop",

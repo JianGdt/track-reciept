@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { once, type Claim, type ClaimStore } from "../apps/web/lib/idempotency";
-import { ServiceError } from "../apps/web/lib/service-error";
+import { once, type Claim, type ClaimStore } from "../lib/idempotency";
+import { ServiceError } from "../lib/service-error";
 function memory<T>(): ClaimStore<T> {
   const claims = new Map<string, Claim<T>>();
   return {

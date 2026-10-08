@@ -4,12 +4,30 @@ import {
   createVaultClient,
   VaultError,
   type AuthPort,
-} from "../packages/firebase/src";
+} from "../lib/vault-client";
 const auth = (): AuthPort => ({
   getSession: async () => ({ data: { user: { id: "alice", email: null } } }),
   signIn: { email: async () => ({ error: null }) },
   signUp: { email: async () => ({ error: null }) },
   signOut: async () => ({ error: null }),
+});
+test("server-provided session avoids another initial get-session request", async () => {
+  let calls = 0;
+  const port = auth();
+  port.getSession = async () => {
+    calls++;
+    return { data: null };
+  };
+  const client = createVaultClient(port);
+  client.auth.primeSession({ user: { id: "server-user", email: null } });
+  let seen = "";
+  const stop = client.auth.watch((session) => {
+    seen = session?.user.id ?? "";
+  });
+  await client.auth.refresh();
+  assert.equal(seen, "server-user");
+  assert.equal(calls, 0);
+  stop();
 });
 test("Strict Mode subscriptions share one session request and cache the result", async () => {
   let calls = 0;

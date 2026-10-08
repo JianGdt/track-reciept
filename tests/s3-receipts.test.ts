@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { S3Receipts, photoStorageError } from "../apps/web/lib/s3-receipts";
+import { S3Receipts, photoStorageError } from "../lib/s3-receipts";
 
 type Command = { constructor: { name: string }; input: Record<string, any> };
 function store(send: (command: Command) => Promise<any>) {

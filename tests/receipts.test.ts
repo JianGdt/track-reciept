@@ -6,7 +6,7 @@ import {
   scanRequestSchema,
   toCsv,
   type Receipt,
-} from "../packages/shared/src";
+} from "../lib/shared";
 const valid = {
   merchant: "Coffee shop",
   purchase_date: "2026-10-07",
@@ -84,7 +84,7 @@ test("CSV handles commas and quotes and neutralizes spreadsheet formulas", () =>
   assert.ok(csv.includes('"hello, ""world""\nnext line"'));
 });
 
-import { ownedImagePath, nextScanQuota } from "../packages/shared/src/security";
+import { ownedImagePath, nextScanQuota } from "../lib/shared/security";
 test("private photos reject other users and path traversal", () => {
   const id = "ce2cc9dd-e6c1-4c8c-b2c3-33c14d02fed1";
   assert.equal(ownedImagePath("alice", `alice/${id}.jpg`), true);
