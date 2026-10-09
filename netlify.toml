@@ -1,0 +1,4 @@
+[build.environment]
+# These are service identifiers and public configuration, not credentials.
+# Keep secret scanning enabled for API keys, private keys, and auth secrets.
+SECRETS_SCAN_OMIT_KEYS = "S3_ENDPOINT,S3_REGION,GEMINI_MODEL,FIREBASE_PROJECT_ID,S3_BUCKET"
