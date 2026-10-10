@@ -74,6 +74,12 @@ import { Alert, AlertDescription } from "./ui/alert";
 import { ReceiptDialog as Dialog } from "./receipt-dialog";
 import { Brand } from "./brand";
 import { Input } from "./ui/input";
+import { ScanProgress } from "./scan-progress";
+import {
+  recoverScan,
+  type ScanProgress as ScanProgressState,
+} from "@/lib/scan-recovery";
+import { LIMITS } from "@/lib/limits";
 import { Textarea } from "./ui/textarea";
 const demoCategories: Category[] = categories.map((name, i) => ({
   id: `00000000-0000-4000-8000-00000000000${i}`,
@@ -1109,6 +1115,19 @@ function ReceiptForm({
 }) {
   const [id] = useState(() => receipt?.id ?? crypto.randomUUID());
   const [busy, setBusy] = useState(false);
+  const [autoScan, setAutoScan] = useState(true);
+  const [progress, setProgress] = useState<ScanProgressState>({
+    stage: "preparing",
+  });
+  const scanController = useRef<AbortController | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      scanController.current?.abort();
+    };
+  }, []);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState("");
   const [imagePath, setImagePath] = useState(receipt?.image_path ?? null);
@@ -1145,6 +1164,7 @@ function ReceiptForm({
     control,
     handleSubmit,
     setValue,
+    setFocus,
     formState: { errors, isSubmitting },
   } = useForm<ReceiptInput>({
     resolver: zodResolver(receiptSchema),
@@ -1175,19 +1195,48 @@ function ReceiptForm({
     [preview],
   );
   const uploading = useRef(false);
-  async function upload(blob: Blob) {
-    if (!vault || uploading.current || Date.now() < retryUntil) return;
+  async function upload(blob: Blob, shouldScan = autoScan) {
+    if (!vault || uploading.current || (shouldScan && Date.now() < retryUntil))
+      return;
     uploading.current = true;
+    const controller = new AbortController();
+    scanController.current = controller;
     setBusy(true);
     setError("");
     try {
       const path = `${userId}/${id}.jpg`;
       if (!imagePath) {
-        await vault.uploadPhoto(path, blob);
+        setProgress({ stage: "uploading" });
+        await vault.uploadPhoto(path, blob, controller.signal);
         setImagePath(path);
       }
+      if (!shouldScan) {
+        setStatus("manual");
+        return;
+      }
+      if (usage.data && usage.data.used >= usage.data.limit) {
+        setStatus("manual");
+        setError(
+          "Your photo is attached. Today's scan allowance is used up, but you can enter the details below and save it.",
+        );
+        return;
+      }
       try {
-        const result = scanSchema.parse(await vault.scan(id, path));
+        const result = scanSchema.parse(
+          await recoverScan({
+            run: () => vault.scan(id, path, controller.signal),
+            readState: () => vault.scanState(id, controller.signal),
+            fromResult: ({ totalMinor, ...value }) => ({
+              ...value,
+              total:
+                totalMinor === null
+                  ? null
+                  : fromMinor(totalMinor, value.currency),
+            }),
+            signal: controller.signal,
+            onProgress: setProgress,
+          }),
+        );
         setScan(result);
         setStatus("scanned");
         setValue("merchant", result.merchant);
@@ -1204,6 +1253,7 @@ function ReceiptForm({
             null,
         );
       } catch (e) {
+        if (controller.signal.aborted) return;
         if (e instanceof VaultError && e.retryAfter)
           setRetryUntil(Date.now() + e.retryAfter * 1000);
         setStatus("failed");
@@ -1214,22 +1264,29 @@ function ReceiptForm({
         );
       }
     } catch (error) {
+      if (controller.signal.aborted) return;
+      if (error instanceof VaultError && error.retryAfter)
+        setRetryUntil(Date.now() + error.retryAfter * 1000);
       setError(
         `${error instanceof Error ? error.message : "Could not upload the photo."} Your photo is still here; retry the upload after resolving the issue.`,
       );
     } finally {
       uploading.current = false;
-      setBusy(false);
-      void usage.refetch();
+      if (!controller.signal.aborted) {
+        setBusy(false);
+        void usage.refetch();
+      }
     }
   }
   async function pick(file?: File) {
     if (!file || busy || imagePath || isSubmitting || picking.current) return;
     picking.current = true;
     setBusy(true);
+    setProgress({ stage: "preparing" });
     setError("");
     try {
       const blob = await compressPhoto(file);
+      if (!mounted.current) return;
       setPending(blob);
       setPreview(URL.createObjectURL(blob));
       if (vault) await upload(blob);
@@ -1241,7 +1298,7 @@ function ReceiptForm({
       setError(e instanceof Error ? e.message : "Could not open this image.");
     } finally {
       picking.current = false;
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
   const save = handleSubmit(async (values) => {
@@ -1295,12 +1352,30 @@ function ReceiptForm({
         }}
       />
       {!receipt && (
+        <div className="receipt-scan-option">
+          <div>
+            <label htmlFor="auto-scan-receipt">
+              Read details automatically
+            </label>
+            <p>Turn off to attach a photo and enter details yourself.</p>
+          </div>
+          <Switch
+            id="auto-scan-receipt"
+            checked={autoScan}
+            onCheckedChange={setAutoScan}
+            disabled={busy || !!imagePath}
+          />
+        </div>
+      )}
+      {!receipt && (
         <p className="scan-privacy">
-          Scanning sends this photo to Google Gemini.{" "}
+          {autoScan
+            ? "Scanning sends this photo to Google Gemini."
+            : "Photo-only uploads are stored without sending them to Gemini."}{" "}
           <a href="/privacy" target="_blank" rel="noreferrer">
             Privacy details
           </a>
-          . Review the extracted fields before saving.
+          . Up to {LIMITS.uploadsPerDay} photo upload attempts per 24 hours.
         </p>
       )}
       {!receipt && (
@@ -1369,44 +1444,82 @@ function ReceiptForm({
             void pick(files[0]);
           }}
         >
-          <button
-            type="button"
-            className="upload-area"
-            onClick={() => input.current?.click()}
-            disabled={busy || !!imagePath || isSubmitting}
-          >
-            {preview ? (
-              <img src={preview} alt="Selected receipt" />
-            ) : (
-              <Upload size={26} />
-            )}
-            <strong>
-              {busy
-                ? "Reading your receipt…"
-                : imagePath
-                  ? "Photo uploaded"
-                  : dragging
-                    ? "Drop your receipt here"
-                    : "Click to upload or drag a receipt here"}
-            </strong>
-            <span>
-              {imagePath
-                ? "Review the extracted details below"
-                : "One photo · JPG, PNG, or WebP · up to 20 MB"}
-            </span>
-          </button>
+          {busy ? (
+            <ScanProgress progress={progress} preview={preview} />
+          ) : (
+            <button
+              type="button"
+              className="upload-area"
+              onClick={() => input.current?.click()}
+              disabled={busy || !!imagePath || isSubmitting}
+            >
+              {preview ? (
+                <img src={preview} alt="Selected receipt" />
+              ) : (
+                <Upload size={26} />
+              )}
+              <strong>
+                {busy
+                  ? "Reading your receipt…"
+                  : imagePath
+                    ? "Photo uploaded"
+                    : dragging
+                      ? "Drop your receipt here"
+                      : "Click to upload or drag a receipt here"}
+              </strong>
+              <span>
+                {busy
+                  ? "This may take up to a minute. Keep this window open."
+                  : imagePath
+                    ? scan
+                      ? "Review the extracted details below"
+                      : "Photo attached · Enter the receipt details below"
+                    : "One photo · JPG, PNG, or WebP · up to 20 MB"}
+              </span>
+            </button>
+          )}
         </div>
+      )}
+      {imagePath && pending && !busy && !scan && !error && (
+        <Button
+          type="button"
+          variant="outline"
+          className="receipt-scan-start"
+          disabled={
+            retrySeconds > 0 ||
+            (usage.data ? usage.data.used >= usage.data.limit : false)
+          }
+          onClick={() => upload(pending, true)}
+        >
+          {usage.data && usage.data.used >= usage.data.limit
+            ? "Scan allowance used · enter details below"
+            : retrySeconds > 0
+              ? `Scan available in ${retrySeconds}s`
+              : "Scan this photo"}
+        </Button>
       )}
       {error && (
         <Alert className="form-error">
           <AlertDescription>
             {error}
+            {imagePath && status === "failed" && !busy && (
+              <button
+                type="button"
+                className="text-link"
+                onClick={() => {
+                  setError("");
+                  setFocus("merchant");
+                }}
+              >
+                Enter details manually
+              </button>
+            )}
             {pending && vault && !busy && (
               <button
                 type="button"
                 className="text-link"
                 disabled={retrySeconds > 0}
-                onClick={() => upload(pending)}
+                onClick={() => upload(pending, imagePath ? true : autoScan)}
               >
                 {retrySeconds > 0
                   ? `Retry in ${retrySeconds}s`
@@ -1430,7 +1543,8 @@ function ReceiptForm({
           fields.
         </p>
       )}
-      <div
+      <fieldset
+        disabled={busy || isSubmitting}
         className={`form-grid ${scan && scan.confidence < 0.8 ? "low-confidence" : ""}`}
       >
         {[
@@ -1507,7 +1621,7 @@ function ReceiptForm({
             <small className="field-error">{errors.notes.message}</small>
           )}
         </label>
-      </div>
+      </fieldset>
       <div className="form-actions">
         <span className="muted">A little more organized.</span>
         <Button type="submit" disabled={isSubmitting || busy}>

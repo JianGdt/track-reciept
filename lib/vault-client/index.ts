@@ -12,6 +12,7 @@ import {
   type ReceiptDto,
   type ReceiptFilters,
 } from "@/lib/shared";
+import { ScanStateSchema } from "../scan-recovery";
 export class VaultError extends Error {
   constructor(
     message: string,
@@ -121,11 +122,24 @@ export function createVaultClient(authClient: AuthPort, apiBaseUrl = "") {
   ) {
     const response = await fetch(`${apiBaseUrl}${path}`, {
       ...options,
-      signal: options.signal ?? AbortSignal.timeout(60_000),
+      signal: options.signal
+        ? AbortSignal.any([options.signal, AbortSignal.timeout(60_000)])
+        : AbortSignal.timeout(60_000),
       credentials: "include",
       headers: {
         ...options.headers,
       },
+    }).catch((error: unknown) => {
+      if (options.signal?.aborted || path !== "/api/v1/receipts/scan")
+        throw error;
+      const timedOut =
+        error instanceof Error &&
+        ["TimeoutError", "AbortError"].includes(error.name);
+      throw new VaultError(
+        "The scanner could not finish. Your photo is uploaded. You can enter the details below and save, or try scanning again.",
+        timedOut ? 504 : 502,
+        timedOut ? "SCAN_TIMEOUT" : "SCAN_CONNECTION_FAILED",
+      );
     });
     if (!response.ok) {
       const result = await response.json().catch(() => ({}));
@@ -137,7 +151,9 @@ export function createVaultClient(authClient: AuthPort, apiBaseUrl = "") {
         result.error?.message ??
           (typeof result.error === "string"
             ? result.error
-            : "Request failed. Please try again."),
+            : path === "/api/v1/receipts/scan" && response.status === 504
+              ? "Reading this receipt took too long. Your photo is uploaded. You can enter the details below and save, or try scanning again."
+              : "Request failed. Please try again."),
         response.status,
         result.error?.code,
         result.error?.requestId,
@@ -252,9 +268,14 @@ export function createVaultClient(authClient: AuthPort, apiBaseUrl = "") {
       request(`/api/v1/receipts/${encodeURIComponent(id)}`, {
         method: "DELETE",
       }),
-    uploadPhoto: (path: string, data: Blob | ArrayBuffer) =>
+    uploadPhoto: (
+      path: string,
+      data: Blob | ArrayBuffer,
+      signal?: AbortSignal,
+    ) =>
       request(`/api/v1/receipts/${encodeURIComponent(photoId(path))}/photo`, {
         method: "PUT",
+        signal,
         headers: { "Content-Type": "image/jpeg" },
         body: data,
       }),
@@ -267,11 +288,19 @@ export function createVaultClient(authClient: AuthPort, apiBaseUrl = "") {
         throw new Error("Invalid photo URL.");
       return result.url;
     },
-    scan: (receiptId: string, _imagePath?: string) => {
+    scanState: async (receiptId: string, signal?: AbortSignal) =>
+      ScanStateSchema.parse(
+        await request(
+          `/api/v1/receipts/${encodeURIComponent(receiptId)}/scan`,
+          { signal },
+        ),
+      ),
+    scan: (receiptId: string, _imagePath?: string, signal?: AbortSignal) => {
       const existing = scans.get(receiptId);
       if (existing) return existing;
       const pending = request("/api/v1/receipts/scan", {
         method: "POST",
+        signal,
         headers: {
           "Content-Type": "application/json",
           "Idempotency-Key": receiptId,

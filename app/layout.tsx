@@ -16,10 +16,13 @@ export const viewport: Viewport = {
   themeColor: "#15191f",
 };
 export const metadata: Metadata = {
-  applicationName: "Resibo’ko",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "Resibo’ko" },
-  icons: { icon: "/icons/icon-192.png", apple: "/icons/apple-touch-icon.png" },
-  title: "Resibo’ko — A little less paper",
+  applicationName: "ResiVault",
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "ResiVault" },
+  icons: {
+    icon: { url: "/icons/resivault-tab.svg", type: "image/svg+xml", sizes: "any" },
+    apple: "/icons/apple-touch-icon.png",
+  },
+  title: "ResiVault — Receipt Tracker",
   description:
     "Your receipts, neatly in one place. Scan, organize, and understand your spending.",
 };

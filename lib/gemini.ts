@@ -4,17 +4,20 @@ import {
   ScanError,
   parseReceiptResponse,
   providerScanError,
+  scanTransportError,
 } from "./gemini-response";
-export async function extractReceipt(bytes: Buffer): Promise<ScanDto> {
+export async function extractReceipt(
+  bytes: Buffer,
+  model = process.env.GEMINI_MODEL || "gemini-3.8-flash",
+  timeoutMs = 35_000,
+): Promise<ScanDto> {
   // One attempt per reservation: provider failures must not amplify spend.
-  return extractWithModel(
-    bytes,
-    process.env.GEMINI_MODEL || "gemini-3.8-flash",
-  );
+  return extractWithModel(bytes, model, timeoutMs);
 }
 async function extractWithModel(
   bytes: Buffer,
   model: string,
+  timeoutMs: number,
 ): Promise<ScanDto> {
   const key = process.env.GEMINI_API_KEY;
   if (!key)
@@ -31,7 +34,7 @@ async function extractWithModel(
       {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(timeoutMs),
         body: JSON.stringify({
           systemInstruction: {
             parts: [
@@ -99,21 +102,28 @@ async function extractWithModel(
       },
     );
   } catch (error) {
-    const timedOut =
-      error instanceof Error &&
-      ["TimeoutError", "AbortError"].includes(error.name);
-    throw new ScanError(
-      timedOut ? 504 : 502,
-      "The scanner could not connect or timed out. Please retry the scan.",
-      true,
-      timedOut ? "SCAN_TIMEOUT" : "SCAN_CONNECTION_FAILED",
-    );
+    throw scanTransportError(error);
   }
-  if (!response.ok) throw providerScanError(response.status);
+  if (!response.ok) {
+    // Keep provider bodies, credentials, and receipt contents out of logs.
+    console.error(
+      JSON.stringify({
+        code: "SCAN_PROVIDER_ERROR",
+        model,
+        providerStatus: response.status,
+      }),
+    );
+    throw providerScanError(response.status);
+  }
   let data;
   try {
     data = await response.json();
-  } catch {
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      ["TimeoutError", "AbortError"].includes(error.name)
+    )
+      throw scanTransportError(error);
     throw new ScanError(
       502,
       "The scanner returned an incomplete result. Please retry the scan.",

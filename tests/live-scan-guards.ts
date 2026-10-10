@@ -39,6 +39,11 @@ async function main() {
     await refund();
     assert.equal((await scanUsage(uid)).used, 0);
     assert.equal((await budget.get()).get("count"), 1); // Costs are not refunded.
+    const quota = user.collection("limits").doc(`quota-${day}`);
+    assert.equal((await quota.get()).get("attempts"), 1);
+    await quota.set({ count: 0, attempts: LIMITS.scanAttemptsPerDay });
+    await rejects(reserveScan(uid, scope), "DAILY_SCAN_ATTEMPTS_EXCEEDED");
+    await quota.set({ count: 0, attempts: 1 });
     for (let i = 0; i < LIMITS.scanPerDay; i++) await reserveScan(uid, scope);
     await rejects(reserveScan(uid, scope), "DAILY_QUOTA_EXCEEDED");
     assert.equal((await scanUsage(uid)).used, 30);

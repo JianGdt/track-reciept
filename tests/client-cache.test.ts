@@ -11,6 +11,24 @@ const auth = (): AuthPort => ({
   signUp: { email: async () => ({ error: null }) },
   signOut: async () => ({ error: null }),
 });
+test("a gateway HTML timeout offers scan recovery instead of a generic error", async (t) => {
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async () => new Response("<h1>Gateway Timeout</h1>", { status: 504 }),
+  );
+  const client = createVaultClient(auth());
+  await assert.rejects(
+    client.scan("ce2cc9dd-e6c1-4c8c-b2c3-33c14d02fed1"),
+    (error: unknown) => {
+      assert.ok(error instanceof VaultError);
+      assert.equal(error.status, 504);
+      assert.match(error.message, /photo is uploaded/);
+      assert.match(error.message, /enter the details/);
+      return true;
+    },
+  );
+});
 test("server-provided session avoids another initial get-session request", async () => {
   let calls = 0;
   const port = auth();

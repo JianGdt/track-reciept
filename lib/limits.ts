@@ -1,6 +1,9 @@
 export const LIMITS = {
   scanPerMinute: 5,
   scanPerDay: 30,
+  scanAttemptsPerDay: 60,
+  newAccountScanAttemptsPerDay: 20,
+  uploadsPerDay: 60,
   newAccountScanPerDay: 10,
   readPerMinute: 120,
   writePerMinute: 30,

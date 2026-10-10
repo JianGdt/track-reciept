@@ -161,6 +161,18 @@ export async function reserveScan(uid: string, testScope = "") {
           ? LIMITS.newAccountScanPerDay
           : LIMITS.scanPerDay;
       const used = count(quota.get("count"));
+      const attempts = count(quota.get("attempts"));
+      const attemptLimit =
+        !Number.isFinite(since) || Date.now() - since < 86_400_000
+          ? LIMITS.newAccountScanAttemptsPerDay
+          : LIMITS.scanAttemptsPerDay;
+      if (attempts >= attemptLimit)
+        throw new ServiceError(
+          429,
+          "Today's scan attempt limit has been reached. Your photo can still be saved with manually entered details. Try scanning again tomorrow.",
+          "DAILY_SCAN_ATTEMPTS_EXCEEDED",
+          retryAfter,
+        );
       if (used >= limit)
         throw new ServiceError(
           429,
@@ -177,7 +189,12 @@ export async function reserveScan(uid: string, testScope = "") {
           retryAfter,
         );
       const deleteAfter = Timestamp.fromMillis(reset + 86_400_000);
-      tx.set(quotaRef, { count: used + 1, deleteAfter });
+      // Refunding a failed scan never restores this abuse-prevention counter.
+      tx.set(quotaRef, {
+        count: used + 1,
+        attempts: attempts + 1,
+        deleteAfter,
+      });
       tx.set(budgetRef, { count: globalUsed + 1, deleteAfter });
       tx.set(ticketRef, { day, refunded: false, deleteAfter });
     }),

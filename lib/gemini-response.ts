@@ -14,6 +14,20 @@ export class ScanError extends Error {
   }
 }
 
+export function scanTransportError(error: unknown): ScanError {
+  const timedOut =
+    error instanceof Error &&
+    ["TimeoutError", "AbortError"].includes(error.name);
+  return new ScanError(
+    timedOut ? 504 : 502,
+    timedOut
+      ? "Reading this receipt took too long. Your photo is uploaded. You can enter the details below and save, or try scanning again."
+      : "The scanner could not connect. Your photo is uploaded. You can enter the details below and save, or try scanning again.",
+    true,
+    timedOut ? "SCAN_TIMEOUT" : "SCAN_CONNECTION_FAILED",
+  );
+}
+
 // Never include the provider body: it may echo receipt content or credentials.
 export function providerScanError(status: number): ScanError {
   if (status === 429)

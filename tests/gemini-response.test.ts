@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   parseReceiptResponse,
   providerScanError,
+  scanTransportError,
 } from "../lib/gemini-response";
 import { receiptSchema } from "../lib/shared";
 const fields = {
@@ -13,6 +14,20 @@ const fields = {
   category: "food",
   confidence: 0.95,
 };
+
+test("timeouts during connection or body reading stay retryable and offer manual entry", () => {
+  for (const name of ["TimeoutError", "AbortError"]) {
+    const error = scanTransportError(new DOMException("aborted", name));
+    assert.equal(error.status, 504);
+    assert.equal(error.code, "SCAN_TIMEOUT");
+    assert.equal(error.retryable, true);
+    assert.match(error.message, /photo is uploaded/);
+    assert.match(error.message, /enter the details/);
+  }
+  const error = scanTransportError(new TypeError("fetch failed"));
+  assert.equal(error.status, 502);
+  assert.equal(error.code, "SCAN_CONNECTION_FAILED");
+});
 
 test("provider outages retain the upstream status and a manual retry delay", () => {
   for (const status of [500, 502, 503, 504]) {
@@ -163,4 +178,32 @@ test("invalid provider envelopes fail safely and blocked photos remain input err
       parseReceiptResponse(response({ ...fields, purchaseDate: "10/08/2026" })),
     { status: 502, code: "SCAN_INVALID_FIELDS" },
   );
+});
+
+test("fallback preserves provider errors and does not retry rejected requests", async () => {
+  const { withScanFallback } = await import("../lib/gemini-response");
+  const outage = providerScanError(503);
+  await assert.rejects(
+    withScanFallback(async () => {
+      throw outage;
+    }),
+    (error) => error === outage,
+  );
+  let calls = 0;
+  for (const status of [400, 401, 403, 404, 429]) {
+    const failure = providerScanError(status);
+    await assert.rejects(
+      withScanFallback(
+        async () => {
+          throw failure;
+        },
+        async () => {
+          calls++;
+          return parseReceiptResponse(response(fields));
+        },
+      ),
+      (error) => error === failure,
+    );
+  }
+  assert.equal(calls, 0);
 });

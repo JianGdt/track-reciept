@@ -1002,6 +1002,10 @@ footer {
   background: none;
 }
 .form-grid {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 17px;
@@ -1102,6 +1106,217 @@ label textarea {
   font-size: 11px;
   line-height: 1.45;
   margin-bottom: 12px;
+}
+
+.receipt-scan-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.receipt-scan-option label {
+  font-size: 12px;
+  font-weight: 600;
+}
+.receipt-scan-option p {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 5px 0 0;
+}
+.receipt-scan-start {
+  width: 100%;
+  margin-bottom: 18px;
+}
+.receipt-scan-progress {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: radial-gradient(ellipse at 50% 20%, var(--soft), var(--bg) 75%);
+  padding: 24px 18px 18px;
+  margin-bottom: 20px;
+  text-align: center;
+  overflow: hidden;
+}
+.receipt-scan-visual {
+  position: relative;
+  width: 160px;
+  height: 140px;
+  margin: 0 auto 14px;
+  display: grid;
+  place-items: center;
+}
+.receipt-scan-orbit {
+  position: absolute;
+  width: 128px;
+  height: 128px;
+  border: 1px dashed var(--primary);
+  opacity: 0.25;
+  border-radius: 50%;
+  animation: receipt-orbit 20s linear infinite;
+}
+.receipt-scan-paper {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 80px;
+  height: 106px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--primary);
+  overflow: hidden;
+  box-shadow: 0 8px 20px #00000012;
+  animation: receipt-float 3s ease-in-out infinite;
+}
+.receipt-scan-paper img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.receipt-scan-beam {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 28px;
+  border-bottom: 2px solid var(--primary);
+  background: linear-gradient(
+    transparent,
+    color-mix(in srgb, var(--primary) 25%, transparent)
+  );
+  animation: receipt-beam 2.4s ease-in-out infinite alternate;
+}
+.receipt-scan-spark {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--primary);
+  animation: receipt-pulse 2s ease-in-out infinite;
+}
+.spark-one {
+  top: 25px;
+  right: 14px;
+}
+.spark-two {
+  bottom: 26px;
+  left: 12px;
+  animation-delay: 0.7s;
+}
+.receipt-scan-progress h3 {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 3px;
+  margin: 0;
+  font-size: 15px;
+  color: var(--ink);
+}
+.receipt-scan-progress p {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin: 8px auto 18px;
+  max-width: 300px;
+}
+.receipt-scan-progress small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.receipt-scan-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+.receipt-scan-dots i {
+  width: 3px;
+  height: 3px;
+  background: currentColor;
+  border-radius: 50%;
+  animation: receipt-pulse 1.3s ease-in-out infinite;
+}
+.receipt-scan-dots i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.receipt-scan-dots i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+.receipt-scan-steps {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.receipt-scan-steps li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.receipt-scan-steps li > span {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  font-size: 10px;
+}
+.receipt-scan-steps .is-current {
+  color: var(--ink);
+  font-weight: 600;
+}
+.receipt-scan-steps .is-current > span,
+.receipt-scan-steps .is-complete > span {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--soft);
+}
+@keyframes receipt-beam {
+  from {
+    transform: translateY(-20px);
+  }
+  to {
+    transform: translateY(80px);
+  }
+}
+@keyframes receipt-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-3deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(2deg);
+  }
+}
+@keyframes receipt-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes receipt-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .receipt-scan-progress *,
+  .receipt-scan-progress *::before,
+  .receipt-scan-progress *::after {
+    animation: none !important;
+  }
+  .receipt-scan-beam {
+    transform: translateY(36px);
+  }
 }
 .scan-privacy a,
 .settings-row a {
@@ -1914,9 +2129,6 @@ label textarea {
     gap: 10px;
   }
 }
-[data-theme="dark"] .brand-logo {
-  filter: brightness(0) invert(1);
-}
 .card[data-slot="card"] {
   display: block;
 }
@@ -2490,5 +2702,27 @@ html[data-theme-reveal] *::after {
   }
 }
 
-.route-state { max-width: 560px; margin: 12vh auto; padding: 24px; display: grid; gap: 18px; }
-.scan-usage { margin-bottom: 16px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.route-state {
+  max-width: 560px;
+  margin: 12vh auto;
+  padding: 24px;
+  display: grid;
+  gap: 18px;
+}
+.route-state--loading {
+  width: 100%;
+  max-width: none;
+  min-height: 100dvh;
+  margin: 0;
+  place-content: center;
+  text-align: center;
+}
+.route-state--loading > * {
+  margin: 0;
+}
+.scan-usage {
+  margin-bottom: 16px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}

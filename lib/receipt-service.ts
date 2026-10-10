@@ -12,13 +12,14 @@ import * as repository from "./receipt-repository";
 import { photoStorage } from "./storage";
 import { photoStorageError } from "./s3-receipts";
 import { extractReceipt } from "./gemini";
-import { ScanError } from "./gemini-response";
+import { ScanError, withScanFallback } from "./gemini-response";
 import { ServiceError } from "./service-error";
 import { once } from "./idempotency";
 import { acquireScanLease, reserveScan } from "./scan-guard";
 import { LIMITS } from "./limits";
 import { firebaseAdmin } from "./firebase-admin";
 import { prepareReceiptImage } from "./receipt-image";
+import { ScanStateSchema, canRecoverScan } from "./scan-recovery";
 
 async function storageAction<T>(
   action: (storage: ReturnType<typeof photoStorage>) => Promise<T>,
@@ -55,6 +56,12 @@ export async function uploadPhoto(uid: string, id: string, bytes: Buffer) {
       409,
       "This receipt was deleted. Start a new receipt.",
     );
+  await repository.rateLimit(
+    uid,
+    "uploads-day",
+    LIMITS.uploadsPerDay,
+    86_400_000,
+  );
   const { full, thumbnail } = await prepareReceiptImage(bytes);
   await storageAction(async (storage) => {
     await storage.upload(`receipts/${uid}/${id}.jpg`, full);
@@ -122,6 +129,40 @@ export async function deleteReceipt(uid: string, id: string) {
     tx.delete(ref);
   });
 }
+export async function receiptScanState(uid: string, id: string) {
+  const [draft, claim] = await Promise.all([
+    repository.userCollection(uid, "drafts").doc(id).get(),
+    repository.userCollection(uid, "requests").doc(`scan-${id}`).get(),
+  ]);
+  if (!draft.get("uploaded") || draft.get("deleted"))
+    throw new ServiceError(404, "Upload a receipt photo first.");
+  if (draft.get("scan"))
+    return ScanStateSchema.parse({ state: "done", result: draft.get("scan") });
+  const expiresAt = Number(claim.get("expiresAt") ?? 0);
+  if (expiresAt <= Date.now()) return { state: "idle" } as const;
+  if (claim.get("state") === "done")
+    return ScanStateSchema.parse({ state: "done", result: claim.get("value") });
+  if (claim.get("state") === "pending") return { state: "pending" } as const;
+  return {
+    state: "failed" as const,
+    retryable: canRecoverScan(
+      new ServiceError(
+        Number(claim.get("error")?.status ?? 500),
+        "Scan failed",
+        claim.get("error")?.code,
+      ),
+    ),
+    retryAfter: Math.max(
+      0,
+      Math.ceil(
+        (Math.max(expiresAt, Number(claim.get("error")?.retryUntil ?? 0)) -
+          Date.now()) /
+          1000,
+      ),
+    ),
+  };
+}
+
 export async function scanReceipt(uid: string, id: string) {
   if (process.env.SCAN_ENABLED === "false")
     throw new ServiceError(
@@ -138,6 +179,7 @@ export async function scanReceipt(uid: string, id: string) {
       const doc = await draft.get();
       if (!doc.get("uploaded") || doc.get("deleted"))
         throw new ServiceError(404, "Upload a receipt photo first.");
+      if (doc.get("scan")) return ScanDtoSchema.parse(doc.get("scan"));
 
       await repository.rateLimit(
         uid,
@@ -154,8 +196,25 @@ export async function scanReceipt(uid: string, id: string) {
         refund = await reserveScan(uid);
         let raw;
         try {
-          raw = await extractReceipt(bytes);
+          const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+          const fallback = process.env.GEMINI_FALLBACK_MODEL?.trim();
+          raw = await withScanFallback(
+            () => extractReceipt(bytes, model),
+            fallback && fallback !== model
+              ? async () => {
+                  // Failed attempts do not consume the user's allowance, but
+                  // each provider call must still reserve global budget.
+                  await refund!();
+                  refund = undefined;
+                  refund = await reserveScan(uid);
+                  // Bound both provider attempts to 45 seconds total, leaving
+                  // room for database/storage work in the 60-second route.
+                  return extractReceipt(bytes, fallback, 10_000);
+                }
+              : undefined,
+          );
         } catch (error) {
+          if (error instanceof ServiceError) throw error;
           if (error instanceof ScanError)
             throw new ServiceError(
               error.status,
