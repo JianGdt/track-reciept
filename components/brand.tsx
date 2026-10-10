@@ -8,10 +8,10 @@ export function Brand() {
         <Image
           src={LOGO}
           alt="ResiVault"
-          width={LOGO.width}
-          height={LOGO.height}
-          unoptimized
-          priority
+          width={186}
+          height={Math.round((186 * LOGO.height) / LOGO.width)}
+          sizes="186px"
+          preload
         />
       </span>
     </a>

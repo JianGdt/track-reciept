@@ -1,17 +1,22 @@
 import "server-only";
 import { cache } from "react";
 import { headers } from "next/headers";
+import { getSessionCookie } from "better-auth/cookies";
 import { getAuthServer } from "./auth";
 import { firebaseAdmin } from "./firebase-admin";
 import { listReceipts, listCategories, rateLimit } from "./receipt-repository";
 import { LIMITS } from "./limits";
 import { scanUsage } from "./scan-guard";
 import { legacyReceipt, type Session } from "./vault-client";
-import { ReceiptFiltersSchema, type ReceiptFilters } from "./shared";
+import { ReceiptFiltersSchema, today, type ReceiptFilters } from "./shared";
 
 export const currentSession = cache(async (): Promise<Session | null> => {
+  const requestHeaders = await headers();
+  // Anonymous visits do not need to initialize auth and its database adapter.
+  // A cookie's presence is only a hint; getSession still verifies it below.
+  if (!getSessionCookie(requestHeaders)) return null;
   const session = await getAuthServer().api.getSession({
-    headers: await headers(),
+    headers: requestHeaders,
   });
   if (!session) return null;
   const user = await firebaseAdmin()
@@ -31,8 +36,9 @@ export async function dashboardData(
     categoryId: params.categoryId,
   });
   const filters: ReceiptFilters = parsed.success ? parsed.data : {};
+  const renderDate = today();
   const session = await currentSession();
-  if (!session) return { session: null, filters, view: "Receipts" };
+  if (!session) return { session: null, filters, renderDate, view: "Receipts" };
   const uid = session.user.id;
   await rateLimit(uid, "reads", LIMITS.readPerMinute, 60_000);
   const [receipts, categories, usage] = await Promise.all([
@@ -42,6 +48,7 @@ export async function dashboardData(
   ]);
   return {
     session,
+    renderDate,
     usage,
     filters,
     view: ["Reports", "Settings"].includes(String(params.view))
