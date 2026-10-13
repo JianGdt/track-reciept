@@ -154,6 +154,13 @@ export const ReportSchema = z
         count: z.number().int(),
       }),
     ),
+    months: z.array(
+      z.object({
+        month: z.string().regex(/^\d{4}-\d{2}$/),
+        totalMinor: z.number().int().nonnegative(),
+        count: z.number().int().nonnegative(),
+      }),
+    ),
   })
   .strict();
 export type ReceiptDto = z.infer<typeof ReceiptDtoSchema>;

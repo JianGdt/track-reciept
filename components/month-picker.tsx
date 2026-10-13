@@ -22,9 +22,11 @@ const months = [
 export function MonthPicker({
   value,
   onChange,
+  allowAll = true,
 }: {
   value: string;
   onChange: (value: string) => void;
+  allowAll?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [year, setYear] = useState(2026);
@@ -104,14 +106,16 @@ export function MonthPicker({
           })}
         </div>
         <div className="month-picker-footer">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => select("")}
-          >
-            Clear
-          </Button>
+          {allowAll && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => select("")}
+            >
+              Clear
+            </Button>
+          )}
           <Button
             type="button"
             variant="secondary"

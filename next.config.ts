@@ -4,6 +4,10 @@ import { resolve } from "node:path";
 const rootEnv = resolve(__dirname, ".env.local");
 if (existsSync(rootEnv)) process.loadEnvFile(rootEnv);
 const config: NextConfig = {
+  images: {
+    formats: ["image/avif", "image/webp"],
+    qualities: [60, 75],
+  },
   experimental: {
     turbopackFileSystemCacheForDev:
       process.env.NEXT_DISABLE_DEV_CACHE !== "true",

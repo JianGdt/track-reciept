@@ -19,6 +19,7 @@ import { acquireScanLease, reserveScan } from "./scan-guard";
 import { LIMITS } from "./limits";
 import { firebaseAdmin } from "./firebase-admin";
 import { prepareReceiptImage } from "./receipt-image";
+import { addMonthlySpending, type MonthlySpending } from "./spending-summary";
 import { ScanStateSchema, canRecoverScan } from "./scan-recovery";
 
 async function storageAction<T>(
@@ -286,6 +287,7 @@ export async function report(
 ) {
   let count = 0,
     totalMinor = 0;
+  const months = new Map<string, MonthlySpending>();
   const categories = new Map<
     string | null,
     { categoryId: string | null; count: number; totalMinor: number }
@@ -296,6 +298,7 @@ export async function report(
     totalMinor += row.totalMinor;
     if (!Number.isSafeInteger(totalMinor))
       throw new ServiceError(422, "Report total exceeds the supported amount.");
+    addMonthlySpending(months, row.purchaseDate, row.totalMinor);
     const category = categories.get(row.categoryId) ?? {
       categoryId: row.categoryId,
       count: 0,
@@ -310,6 +313,7 @@ export async function report(
     totalMinor,
     currency: filters.currency,
     categories: [...categories.values()],
+    months: [...months.values()].sort((a, b) => a.month.localeCompare(b.month)),
   };
 }
 export async function exportReceipts(uid: string, filters: ReceiptFilters) {

@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { SpendingChart } from "./spending-chart";
 import { MonthPicker } from "./month-picker";
-import { InstallApp } from "./pwa";
 import type { DashboardData } from "@/lib/dashboard-data";
 import { flushSync } from "react-dom";
 import { revealTheme } from "@/lib/theme-reveal";
@@ -24,9 +24,6 @@ import {
   Camera,
   Download,
   ChevronRight,
-  LogOut,
-  Sun,
-  Moon,
   Leaf,
   ShoppingBasket,
   Utensils,
@@ -49,27 +46,26 @@ import {
   type Category,
 } from "@/lib/shared";
 import { vault } from "@/lib/client";
+import { selectReceipts, summarizeSpending } from "@/lib/spending-summary";
 import { Button } from "./ui/button";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-} from "./ui/card";
+import { Card } from "./ui/card";
 import { SummaryCard } from "./summary-card";
 import { VaultSelect } from "./vault-select";
 import { Badge } from "./ui/badge";
-import { Switch } from "./ui/switch";
-import { Separator } from "./ui/separator";
 import { Skeleton } from "./ui/skeleton";
-import { Alert, AlertDescription } from "./ui/alert";
-import { ReceiptDialog as Dialog } from "./receipt-dialog";
 import { Brand } from "./brand";
+import { Auth } from "./auth";
+import { ThemeToggle } from "./theme-toggle";
 import { Input } from "./ui/input";
+const SettingsPanel = dynamic(() => import("./settings-panel"), {
+  loading: () => <p role="status">Opening preferences…</p>,
+});
 const ReceiptForm = dynamic(() => import("./receipt-form"), {
   loading: () => <p role="status">Opening receipt editor…</p>,
 });
+const Dialog = dynamic(() =>
+  import("./receipt-dialog").then((module) => module.ReceiptDialog),
+);
 const demoCategories: Category[] = categories.map((name, i) => ({
   id: `00000000-0000-4000-8000-00000000000${i}`,
   name,
@@ -105,10 +101,6 @@ export function Dashboard({ initial }: { initial: DashboardData }) {
       client.setQueryData(
         qk.categories(initial.session.user.id),
         initial.categories,
-      );
-      client.setQueryData(
-        [initial.session.user.id, "scan-usage"],
-        initial.usage,
       );
     }
     return client;
@@ -149,8 +141,6 @@ function App({ initial }: { initial: DashboardData }) {
   }
   useEffect(() => () => themeTransition.current?.skipTransition(), []);
   const [notice, setNotice] = useState("");
-  const [deletePassword, setDeletePassword] = useState("");
-  const [deletingAccount, setDeletingAccount] = useState(false);
   const [editing, setEditing] = useState<Receipt | null | undefined>(undefined);
   const [detail, setDetail] = useState<Receipt | null>(null);
   const activeUid = useRef<string | null>(initial.session?.user.id ?? null);
@@ -233,9 +223,10 @@ function App({ initial }: { initial: DashboardData }) {
     }
   }, [dark, demoReady]);
   const uid = session?.user.id ?? "";
+  const selectedMonth = month || currentDate.slice(0, 7);
   const filters = {
     q: debouncedSearch || undefined,
-    month: month || undefined,
+    month: selectedMonth,
     categoryId: category || undefined,
   };
   const reportFilters = {
@@ -260,29 +251,37 @@ function App({ initial }: { initial: DashboardData }) {
     enabled: !!session && !!vault,
     queryFn: () => vault!.report(reportFilters),
   });
-  const monthlyFilters = {
-    month: currentDate.slice(0, 7),
-    currency: reportFilters.currency,
-  };
-  const monthlyQuery = useQuery({
-    queryKey: qk.report(uid, monthlyFilters),
-    enabled: !!session && !!vault,
-    queryFn: () => vault!.report(monthlyFilters),
+  const trendFilters = { ...reportFilters, month: undefined };
+  const trendQuery = useQuery({
+    queryKey: qk.report(uid, trendFilters),
+    enabled: !!session && !!vault && view === "Reports",
+    queryFn: () => vault!.report(trendFilters),
   });
+  const trend = vault
+    ? trendQuery.data
+    : summarizeSpending(selectReceipts(local, trendFilters), currency);
   const cats = vault ? (catsQuery.data ?? []) : demoCategories;
   const receipts = vault
     ? (receiptsQuery.data?.pages.flatMap((page) => page.data) ?? [])
     : local;
   const names = Object.fromEntries(cats.map((c) => [c.id, c.name]));
-  const filtered = receipts;
-  const receiptCount = reportQuery.data?.count ?? receipts.length;
-  const total = fromMinor(reportQuery.data?.totalMinor ?? 0, currency);
-  const monthlyTotal = fromMinor(monthlyQuery.data?.totalMinor ?? 0, currency);
+  const filtered = vault ? receipts : selectReceipts(receipts, filters);
+  const report = vault
+    ? reportQuery.data
+    : summarizeSpending(filtered, currency);
+  const receiptCount = report?.count ?? filtered.length;
+  const total = fromMinor(report?.totalMinor ?? 0, currency);
+  const spendingPeriod = new Date(
+    `${selectedMonth}-01T12:00:00`,
+  ).toLocaleDateString("en", {
+    month: "long",
+    year: "numeric",
+  });
   const breakdown = cats
     .map((c) => ({
       ...c,
       total: fromMinor(
-        (reportQuery.data?.categories ?? [])
+        (report?.categories ?? [])
           .filter(
             (row) =>
               row.categoryId === c.id ||
@@ -404,15 +403,7 @@ function App({ initial }: { initial: DashboardData }) {
       <div className="main-shell">
         <header className="mobile-header">
           <Brand />
-          <button
-            className="icon-button"
-            onClick={(event) => toggleTheme(event.currentTarget)}
-            aria-label={dark ? "Use light theme" : "Use dark theme"}
-          >
-            <span className="theme-switch-icon" key={String(dark)}>
-              {dark ? <Sun size={21} /> : <Moon size={21} />}
-            </span>
-          </button>
+          <ThemeToggle dark={dark} onToggle={toggleTheme} size={21} />
         </header>
         <header className="topbar">
           <div className="breadcrumb">
@@ -425,15 +416,7 @@ function App({ initial }: { initial: DashboardData }) {
                 <span /> Local mode
               </span>
             )}
-            <button
-              className="icon-button"
-              onClick={(event) => toggleTheme(event.currentTarget)}
-              aria-label={dark ? "Use light theme" : "Use dark theme"}
-            >
-              <span className="theme-switch-icon" key={String(dark)}>
-                {dark ? <Sun size={18} /> : <Moon size={18} />}
-              </span>
-            </button>
+            <ThemeToggle dark={dark} onToggle={toggleTheme} />
           </div>
         </header>
         <main key={view} className="view-content">
@@ -450,17 +433,23 @@ function App({ initial }: { initial: DashboardData }) {
           {view !== "Settings" && (
             <section
               className="mobile-summary"
-              aria-label="Monthly spending summary"
+              aria-label="Spending summary for selected month"
             >
               <div>
-                <span>Spent this month · {currency}</span>
+                <span>Monthly spending · {currency}</span>
                 <ReceiptText size={22} />
               </div>
-              <strong>{formatMoney(monthlyTotal, currency)}</strong>
+              <strong>
+                {reportQuery.error
+                  ? "—"
+                  : reportQuery.isLoading
+                    ? "…"
+                    : formatMoney(total, currency)}
+              </strong>
               <p>
                 {receiptCount} saved{" "}
                 {receipts.length === 1 ? "receipt" : "receipts"}
-                <span>All in one place</span>
+                <span>{spendingPeriod}</span>
               </p>
             </section>
           )}
@@ -511,174 +500,39 @@ function App({ initial }: { initial: DashboardData }) {
             </div>
           )}
           {view === "Settings" ? (
-            <Card className="settings-card">
-              <CardHeader>
-                <CardTitle>Preferences</CardTitle>
-                <CardDescription>
-                  A workspace that feels like yours.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <InstallApp />
-                <Separator />
-                <div className="settings-row">
-                  <div>
-                    <label htmlFor="dark-mode">Dark appearance</label>
-                    <p>Switch between light and dark.</p>
-                  </div>
-                  <Switch
-                    id="dark-mode"
-                    checked={dark}
-                    onCheckedChange={() =>
-                      toggleTheme(document.getElementById("dark-mode"))
-                    }
-                  />
-                </div>
-                <Separator />
-                <div className="settings-row">
-                  <div>
-                    <strong>Summary currency</strong>
-                    <p>Each currency is totaled separately.</p>
-                  </div>
-                  <VaultSelect
-                    label="Summary currency"
-                    value={currency}
-                    onValueChange={(next) => {
-                      setCurrency(next);
-                      localStorage.setItem("receipt-vault-currency", next);
-                    }}
-                    options={["PHP", "USD", "EUR", "GBP", "JPY", "SGD"].map(
-                      (value) => ({ value, label: value }),
-                    )}
-                  />
-                </div>
-                <Separator />
-                <div className="settings-row">
-                  <div>
-                    <strong>Your archive</strong>
-                    <p>Download receipts in your current selection.</p>
-                  </div>
-                  <Button variant="outline" onClick={download}>
-                    <Download size={16} /> Export CSV
-                  </Button>
-                </div>
-                <Separator />
-                <div className="settings-categories">
-                  <strong>Categories</strong>
-                  <div className="category-chips">
-                    {cats.map((c) => (
-                      <Badge
-                        variant="secondary"
-                        className={c.name.toLowerCase()}
-                        key={c.id}
-                      >
-                        {c.name}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-                {vault && (
-                  <>
-                    <Separator />
-                    <div className="settings-row">
-                      <div>
-                        <strong>Account</strong>
-                        <p>{session?.user.email}</p>
-                      </div>
-                      <Button
-                        variant="outline"
-                        onClick={async () => {
-                          const { error } = await vault!.auth.signOut();
-                          if (error)
-                            setNotice("Could not sign out. Try again.");
-                        }}
-                      >
-                        <LogOut size={16} /> Sign out
-                      </Button>
-                    </div>
-                  </>
-                )}
-                <Separator />
-                <div className="settings-row">
-                  <div>
-                    <strong>Privacy</strong>
-                    <p>
-                      Your receipt photos are sent to Google Gemini when you
-                      scan. <a href="/privacy">Read our privacy notice</a>.
-                    </p>
-                  </div>
-                </div>
-                <Separator />
-                <div className="settings-row">
-                  <div>
-                    <strong>Delete account</strong>
-                    <p>
-                      Permanently remove your account, receipts, and photos.
-                    </p>
-                    <label>
-                      Confirm your password
-                      <Input
-                        type="password"
-                        autoComplete="current-password"
-                        value={deletePassword}
-                        onChange={(event) =>
-                          setDeletePassword(event.target.value)
-                        }
-                      />
-                    </label>
-                  </div>
-                  <Button
-                    variant="destructive"
-                    disabled={!deletePassword || deletingAccount}
-                    onClick={async () => {
-                      if (
-                        !window.confirm(
-                          "Permanently delete your account, all receipts, and all photos? This cannot be undone.",
-                        )
-                      )
-                        return;
-                      setDeletingAccount(true);
-                      const { error } =
-                        await vault!.auth.deleteAccount(deletePassword);
-                      setDeletePassword("");
-                      setDeletingAccount(false);
-                      if (error) setNotice(error.message);
-                    }}
-                  >
-                    {deletingAccount ? "Deleting…" : "Delete account"}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+            <SettingsPanel
+              dark={dark}
+              toggleTheme={toggleTheme}
+              currency={currency}
+              setCurrency={setCurrency}
+              download={download}
+              cats={cats}
+              session={session}
+              setNotice={setNotice}
+            />
           ) : (
             <>
               <div className="stats">
                 <SummaryCard
                   featured
-                  loading={
-                    receiptsQuery.isLoading ||
-                    reportQuery.isLoading ||
-                    monthlyQuery.isLoading
-                  }
-                  label="Spent this month"
+                  loading={receiptsQuery.isLoading || reportQuery.isLoading}
+                  label="Monthly spending"
                   icon={<ChartNoAxesCombined size={19} />}
-                  value={formatMoney(monthlyTotal, currency)}
+                  value={
+                    reportQuery.error
+                      ? "—"
+                      : reportQuery.isLoading
+                        ? "…"
+                        : formatMoney(total, currency)
+                  }
                   description={
                     <>
-                      {new Date(`${currentDate}T12:00:00`).toLocaleDateString("en", {
-                        month: "long",
-                        year: "numeric",
-                      })}{" "}
-                      · {currency} only
+                      {spendingPeriod} · {currency} only · Current selection
                     </>
                   }
                 />
                 <SummaryCard
-                  loading={
-                    receiptsQuery.isLoading ||
-                    reportQuery.isLoading ||
-                    monthlyQuery.isLoading
-                  }
+                  loading={receiptsQuery.isLoading || reportQuery.isLoading}
                   label="Receipts saved"
                   icon={<ReceiptText size={19} />}
                   value={
@@ -690,11 +544,7 @@ function App({ initial }: { initial: DashboardData }) {
                   description="Receipts in current selection"
                 />
                 <SummaryCard
-                  loading={
-                    receiptsQuery.isLoading ||
-                    reportQuery.isLoading ||
-                    monthlyQuery.isLoading
-                  }
+                  loading={receiptsQuery.isLoading || reportQuery.isLoading}
                   label="Top category"
                   icon={<ShoppingBasket size={19} />}
                   value={breakdown[0]?.total ? breakdown[0].name : "—"}
@@ -705,6 +555,18 @@ function App({ initial }: { initial: DashboardData }) {
                   }
                 />
               </div>
+              {view === "Reports" && (
+                <SpendingChart
+                  months={trend?.months ?? []}
+                  selectedMonth={selectedMonth}
+                  onSelectMonth={setMonth}
+                  currency={currency}
+                  loading={trendQuery.isLoading}
+                  updating={trendQuery.isFetching && !trendQuery.isLoading}
+                  error={!!trendQuery.error}
+                  onRetry={() => void trendQuery.refetch()}
+                />
+              )}
               <div className="content-grid">
                 <section className="receipt-section">
                   <div className="section-heading">
@@ -739,8 +601,14 @@ function App({ initial }: { initial: DashboardData }) {
                         ...cats.map((c) => ({ value: c.id, label: c.name })),
                       ]}
                     />
-                    <MonthPicker value={month} onChange={setMonth} />
-                    {(search || month || category) && (
+                    <MonthPicker
+                      value={selectedMonth}
+                      onChange={setMonth}
+                      allowAll={false}
+                    />
+                    {(search ||
+                      selectedMonth !== currentDate.slice(0, 7) ||
+                      category) && (
                       <button
                         className="icon-button"
                         aria-label="Clear filters"
@@ -793,12 +661,12 @@ function App({ initial }: { initial: DashboardData }) {
                       <h3>
                         {receipts.length
                           ? "No matching receipts"
-                          : "Your fresh start begins here"}
+                          : "No receipts this month"}
                       </h3>
                       <p>
                         {receipts.length
                           ? "Try another store, category, or month."
-                          : "Add your first receipt and leave the paper behind."}
+                          : "Choose another month or add a receipt for this month."}
                       </p>
                       <Button
                         variant="outline"
@@ -807,88 +675,94 @@ function App({ initial }: { initial: DashboardData }) {
                         <Plus size={16} /> Add receipt
                       </Button>
                     </div>
-                  ) : view === "Reports" ? (
-                    <div className="report-main">
-                      <h3>
-                        {formatMoney(total, currency)}{" "}
-                        <small>in your selection · {currency}</small>
-                      </h3>
-                      {breakdown.map((c) => (
-                        <div className="report-row" key={c.id}>
-                          <div>
-                            <CategoryIcon name={c.name} />
-                            <strong>{c.name}</strong>
-                            <span>{formatMoney(c.total, currency)}</span>
-                          </div>
-                          <div className="bar-track">
-                            <div
-                              style={{
-                                width: `${total ? (c.total / total) * 100 : 0}%`,
-                                background: c.color ?? "#85918a",
-                              }}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
                   ) : (
-                    <div className="receipt-groups">
-                      {Object.entries(grouped).map(([date, rows]) => (
-                        <div key={date}>
-                          <div className="date-heading">
-                            <span>
-                              {date === currentDate
-                                ? "Today"
-                                : new Date(
-                                    date + "T12:00:00",
-                                  ).toLocaleDateString("en-PH", {
-                                    weekday: "long",
-                                    month: "short",
-                                    day: "numeric",
-                                  })}
-                            </span>
-                            <span>
-                              {rows?.length} receipt
-                              {rows?.length === 1 ? "" : "s"}
-                            </span>
-                          </div>
-                          {rows?.map((r) => (
-                            <button
-                              className="receipt-row"
-                              key={r.id}
-                              onClick={() => setDetail(r)}
-                            >
-                              <CategoryIcon
-                                name={names[r.category_id ?? ""] ?? "Other"}
-                              />
-                              <span className="receipt-store">
-                                <strong>{r.merchant}</strong>
-                                <small>
-                                  {r.payment_method || "Receipt"}
-                                  <span>·</span>
-                                  {r.scan_status === "scanned"
-                                    ? "Scanned receipt"
-                                    : "Manual entry"}
-                                </small>
-                              </span>
-                              <Badge
-                                variant="secondary"
-                                className={`badge ${names[r.category_id ?? ""]?.toLowerCase() ?? "other"}`}
-                              >
-                                {names[r.category_id ?? ""] ?? "Other"}
-                              </Badge>
-                              <strong className="receipt-price">
-                                {formatMoney(
-                                  Number(r.total_amount),
-                                  r.currency,
-                                )}
-                              </strong>
-                              <ChevronRight size={16} className="row-chevron" />
-                            </button>
+                    <>
+                      {view === "Reports" && (
+                        <div className="report-main">
+                          <h3>
+                            {formatMoney(total, currency)}{" "}
+                            <small>in your selection · {currency}</small>
+                          </h3>
+                          {breakdown.map((c) => (
+                            <div className="report-row" key={c.id}>
+                              <div>
+                                <CategoryIcon name={c.name} />
+                                <strong>{c.name}</strong>
+                                <span>{formatMoney(c.total, currency)}</span>
+                              </div>
+                              <div className="bar-track">
+                                <div
+                                  style={{
+                                    width: `${total ? (c.total / total) * 100 : 0}%`,
+                                    background: c.color ?? "#85918a",
+                                  }}
+                                />
+                              </div>
+                            </div>
                           ))}
                         </div>
-                      ))}
-                    </div>
+                      )}
+                      <div className="receipt-groups">
+                        {Object.entries(grouped).map(([date, rows]) => (
+                          <div key={date}>
+                            <div className="date-heading">
+                              <span>
+                                {date === currentDate
+                                  ? "Today"
+                                  : new Date(
+                                      date + "T12:00:00",
+                                    ).toLocaleDateString("en-PH", {
+                                      weekday: "long",
+                                      month: "short",
+                                      day: "numeric",
+                                    })}
+                              </span>
+                              <span>
+                                {rows?.length} receipt
+                                {rows?.length === 1 ? "" : "s"}
+                              </span>
+                            </div>
+                            {rows?.map((r) => (
+                              <button
+                                className="receipt-row"
+                                key={r.id}
+                                onClick={() => setDetail(r)}
+                              >
+                                <CategoryIcon
+                                  name={names[r.category_id ?? ""] ?? "Other"}
+                                />
+                                <span className="receipt-store">
+                                  <strong>{r.merchant}</strong>
+                                  <small>
+                                    {r.payment_method || "Receipt"}
+                                    <span>·</span>
+                                    {r.scan_status === "scanned"
+                                      ? "Scanned receipt"
+                                      : "Manual entry"}
+                                  </small>
+                                </span>
+                                <Badge
+                                  variant="secondary"
+                                  className={`badge ${names[r.category_id ?? ""]?.toLowerCase() ?? "other"}`}
+                                >
+                                  {names[r.category_id ?? ""] ?? "Other"}
+                                </Badge>
+                                <strong className="receipt-price">
+                                  {formatMoney(
+                                    Number(r.total_amount),
+                                    r.currency,
+                                  )}
+                                </strong>
+                                <ChevronRight
+                                  size={16}
+                                  className="row-chevron"
+                                />
+                              </button>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    </>
                   )}
                   {receiptsQuery.hasNextPage && (
                     <Button
@@ -901,7 +775,7 @@ function App({ initial }: { initial: DashboardData }) {
                         : "Load more receipts"}
                     </Button>
                   )}
-                  {(reportQuery.error || monthlyQuery.error) && (
+                  {reportQuery.error && (
                     <p role="alert">
                       Could not load complete totals.{" "}
                       <button type="button" onClick={() => void refresh()}>
@@ -1013,154 +887,97 @@ function App({ initial }: { initial: DashboardData }) {
           </button>
         ))}
       </nav>
-      <Dialog
-        open={editing !== undefined}
-        onOpenChange={(open) => {
-          if (!open) setEditing(undefined);
-        }}
-        title={editing ? "Edit receipt" : "Add a receipt"}
-        description="Upload a photo or enter the details. Review everything before saving."
-      >
-        {editing !== undefined && (
-          <ReceiptForm
-            key={editing?.id ?? "new"}
-            receipt={editing}
-            cats={cats}
-            currency={currency}
-            userId={session?.user.id ?? "demo"}
-            onSaved={async (r) => {
-              if (!vault) persist([r, ...local.filter((x) => x.id !== r.id)]);
-              else await refresh();
-              setEditing(undefined);
-              setNotice("Receipt saved. Everything in its place.");
-            }}
-          />
-        )}
-      </Dialog>
-      <Dialog
-        open={!!detail}
-        onOpenChange={(open) => {
-          if (!open) setDetail(null);
-        }}
-        title={detail?.merchant ?? "Receipt"}
-        description="Your original receipt and saved details."
-      >
-        {detail && (
-          <div className="detail">
-            {photo ? (
-              <img
-                src={photo}
-                alt={`Receipt from ${detail.merchant}`}
-                className="receipt-photo"
-              />
-            ) : (
-              <div className="photo-placeholder">
-                <ReceiptText size={32} />
-                {photoError ||
-                  (detail.image_path ? "Loading photo…" : "No photo attached")}
+      {editing !== undefined && (
+        <Dialog
+          open={editing !== undefined}
+          onOpenChange={(open) => {
+            if (!open) setEditing(undefined);
+          }}
+          title={editing ? "Edit receipt" : "Add a receipt"}
+          description="Upload a photo or enter the details. Review everything before saving."
+        >
+          {editing !== undefined && (
+            <ReceiptForm
+              key={editing?.id ?? "new"}
+              receipt={editing}
+              cats={cats}
+              currency={currency}
+              userId={session?.user.id ?? "demo"}
+              onSaved={async (r) => {
+                if (!vault) persist([r, ...local.filter((x) => x.id !== r.id)]);
+                else await refresh();
+                // A successful save should reveal the receipt, even when its
+                // purchase date or category falls outside the previous filters.
+                setMonth(r.purchase_date.slice(0, 7));
+                setSearch("");
+                setDebouncedSearch("");
+                setCategory("");
+                setView("Receipts");
+                setEditing(undefined);
+                setNotice(
+                  "Receipt saved. Showing receipts for its purchase month.",
+                );
+              }}
+            />
+          )}
+        </Dialog>
+      )}
+      {detail && (
+        <Dialog
+          open={!!detail}
+          onOpenChange={(open) => {
+            if (!open) setDetail(null);
+          }}
+          title={detail?.merchant ?? "Receipt"}
+          description="Your original receipt and saved details."
+        >
+          {detail && (
+            <div className="detail">
+              {photo ? (
+                <img
+                  src={photo}
+                  alt={`Receipt from ${detail.merchant}`}
+                  className="receipt-photo"
+                />
+              ) : (
+                <div className="photo-placeholder">
+                  <ReceiptText size={32} />
+                  {photoError ||
+                    (detail.image_path
+                      ? "Loading photo…"
+                      : "No photo attached")}
+                </div>
+              )}
+              <div className="detail-amount">
+                {formatMoney(Number(detail.total_amount), detail.currency)}
               </div>
-            )}
-            <div className="detail-amount">
-              {formatMoney(Number(detail.total_amount), detail.currency)}
+              <dl>
+                <dt>Purchased</dt>
+                <dd>{detail.purchase_date}</dd>
+                <dt>Category</dt>
+                <dd>{names[detail.category_id ?? ""] ?? "Other"}</dd>
+                <dt>Payment</dt>
+                <dd>{detail.payment_method || "Not specified"}</dd>
+                <dt>Notes</dt>
+                <dd>{detail.notes || "—"}</dd>
+              </dl>
+              <div className="form-actions">
+                <Button variant="destructive" onClick={() => remove(detail)}>
+                  Delete receipt
+                </Button>
+                <Button
+                  onClick={() => {
+                    setEditing(detail);
+                    setDetail(null);
+                  }}
+                >
+                  Edit receipt
+                </Button>
+              </div>
             </div>
-            <dl>
-              <dt>Purchased</dt>
-              <dd>{detail.purchase_date}</dd>
-              <dt>Category</dt>
-              <dd>{names[detail.category_id ?? ""] ?? "Other"}</dd>
-              <dt>Payment</dt>
-              <dd>{detail.payment_method || "Not specified"}</dd>
-              <dt>Notes</dt>
-              <dd>{detail.notes || "—"}</dd>
-            </dl>
-            <div className="form-actions">
-              <Button variant="destructive" onClick={() => remove(detail)}>
-                Delete receipt
-              </Button>
-              <Button
-                onClick={() => {
-                  setEditing(detail);
-                  setDetail(null);
-                }}
-              >
-                Edit receipt
-              </Button>
-            </div>
-          </div>
-        )}
-      </Dialog>
-    </div>
-  );
-}
-function Auth() {
-  const [signup, setSignup] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-  return (
-    <div className="auth-page">
-      <Card>
-        <Brand />
-        <h1>{signup ? "A fresh start." : "Welcome back."}</h1>
-        <p>Your receipts, all together.</p>
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setBusy(true);
-            setMessage("");
-            try {
-              const { error } = signup
-                ? await vault!.auth.signUp({ email, password })
-                : await vault!.auth.signInWithPassword({ email, password });
-              if (error) setMessage(error.message);
-              else if (signup)
-                setMessage("Your account is ready. Welcome to Resibo’ko.");
-            } catch {
-              setMessage("Could not connect. Please try again.");
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          <label>
-            Email
-            <Input
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </label>
-          <label>
-            Password
-            <Input
-              type="password"
-              autoComplete={signup ? "new-password" : "current-password"}
-              minLength={8}
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </label>
-          {message && <p role="status">{message}</p>}
-          <Button disabled={busy}>
-            {busy ? "One moment…" : signup ? "Create account" : "Log in"}
-          </Button>
-        </form>
-        <button
-          className="text-link"
-          onClick={() => {
-            setSignup(!signup);
-            setMessage("");
-          }}
-        >
-          {signup
-            ? "Already have an account? Log in"
-            : "New here? Create an account"}
-        </button>
-      </Card>
+          )}
+        </Dialog>
+      )}
     </div>
   );
 }

@@ -11,7 +11,9 @@ export function Brand() {
           width={186}
           height={Math.round((186 * LOGO.height) / LOGO.width)}
           sizes="186px"
+          quality={60}
           preload
+          fetchPriority="high"
         />
       </span>
     </a>

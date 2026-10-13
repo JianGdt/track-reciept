@@ -1,9 +1,10 @@
-import { Dashboard } from "@/components/dashboard";
+import { VaultEntry } from "@/components/vault-entry";
 import { dashboardData } from "@/lib/dashboard-data";
 export default async function Page({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  return <Dashboard initial={await dashboardData(await searchParams)} />;
+  const initial = await dashboardData(await searchParams);
+  return <VaultEntry initial={initial} />;
 }

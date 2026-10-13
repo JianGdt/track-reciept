@@ -4,7 +4,7 @@ import "./globals.css";
 import { ThemeTokens } from "./theme";
 import { PwaProvider } from "@/components/pwa";
 const geist = localFont({
-  src: "./fonts/Geist-Variable.ttf",
+  src: "./fonts/Geist-Variable.woff2",
   variable: "--font-geist",
   weight: "100 900",
   display: "swap",

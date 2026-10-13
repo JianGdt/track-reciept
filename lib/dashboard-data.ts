@@ -6,7 +6,6 @@ import { getAuthServer } from "./auth";
 import { firebaseAdmin } from "./firebase-admin";
 import { listReceipts, listCategories, rateLimit } from "./receipt-repository";
 import { LIMITS } from "./limits";
-import { scanUsage } from "./scan-guard";
 import { legacyReceipt, type Session } from "./vault-client";
 import { ReceiptFiltersSchema, today, type ReceiptFilters } from "./shared";
 
@@ -37,19 +36,18 @@ export async function dashboardData(
   });
   const filters: ReceiptFilters = parsed.success ? parsed.data : {};
   const renderDate = today();
+  filters.month ||= renderDate.slice(0, 7);
   const session = await currentSession();
   if (!session) return { session: null, filters, renderDate, view: "Receipts" };
   const uid = session.user.id;
   await rateLimit(uid, "reads", LIMITS.readPerMinute, 60_000);
-  const [receipts, categories, usage] = await Promise.all([
+  const [receipts, categories] = await Promise.all([
     listReceipts(uid, filters, 20),
     listCategories(uid),
-    scanUsage(uid).catch(() => undefined),
   ]);
   return {
     session,
     renderDate,
-    usage,
     filters,
     view: ["Reports", "Settings"].includes(String(params.view))
       ? String(params.view)

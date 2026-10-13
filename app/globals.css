@@ -960,6 +960,7 @@ footer {
 .bar-track > div {
   height: 100%;
   border-radius: 4px;
+  transition: width 450ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .modal-overlay {
   position: fixed;
@@ -2725,4 +2726,238 @@ html[data-theme-reveal] *::after {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
+}
+
+/* Monthly reports */
+.spending-chart {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 28px;
+  margin-bottom: 28px;
+  overflow: hidden;
+  animation: spending-enter 320ms ease-out both;
+}
+.spending-chart-heading,
+.spending-chart-summary,
+.spending-chart-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.spending-chart-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: var(--muted);
+  margin-bottom: 9px;
+}
+.spending-chart-heading h2 {
+  font-size: 22px;
+}
+.spending-chart-heading p,
+.spending-chart-note {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 7px;
+}
+.spending-chart-summary {
+  margin: 28px 0 22px;
+}
+.spending-chart-summary > div:first-child {
+  display: grid;
+  gap: 5px;
+}
+.spending-chart-summary span,
+.spending-chart-summary small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.spending-value {
+  font-size: 30px;
+  letter-spacing: -1px;
+  font-variant-numeric: tabular-nums;
+  animation: spending-enter 240ms ease-out both;
+}
+.spending-year-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.spending-year-control strong {
+  min-width: 40px;
+  text-align: center;
+}
+.spending-chart-scroll {
+  overflow-x: auto;
+  padding: 4px 4px 10px;
+}
+.spending-chart-axis {
+  height: 192px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 10px;
+  pointer-events: none;
+}
+.spending-bars {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(36px, 1fr));
+  gap: 12px;
+  margin: -176px 0 0 70px;
+  min-width: 590px;
+  background: repeating-linear-gradient(
+      to top,
+      transparent 0,
+      transparent 47px,
+      var(--line) 47px,
+      var(--line) 48px
+    )
+    top / 100% 176px no-repeat;
+}
+.spending-month {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  border-radius: 6px;
+}
+.spending-month:active {
+  transform: none;
+}
+.spending-month:focus-visible {
+  outline: 2px solid var(--primary);
+}
+.spending-bar-track {
+  height: 176px;
+  width: 100%;
+  max-width: 52px;
+  display: flex;
+  align-items: flex-end;
+}
+.spending-bar {
+  display: block;
+  width: 100%;
+  border-radius: 7px 7px 2px 2px;
+  background: var(--accent);
+  transform-origin: bottom;
+  transition:
+    height 550ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 200ms ease,
+    box-shadow 200ms ease;
+  animation: spending-grow 650ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--bar-delay);
+}
+.spending-month[aria-pressed="true"] .spending-bar {
+  background: var(--primary);
+}
+.spending-month:hover .spending-bar,
+.spending-month:focus-visible .spending-bar {
+  box-shadow: 0 0 0 2px var(--primary);
+}
+.spending-bar[data-empty="true"] {
+  min-height: 2px;
+}
+.spending-month-label {
+  font-size: 12px;
+  margin-top: 4px;
+}
+.spending-month-value {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.spending-month[aria-pressed="true"] {
+  color: var(--primary);
+  font-weight: 600;
+}
+.spending-chart-footer {
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.spending-chart-footer i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: var(--primary);
+  border-radius: 50%;
+  margin-right: 6px;
+}
+.spending-chart-note {
+  margin-top: 14px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.spending-chart-message,
+.spending-chart-loading {
+  min-height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: var(--muted);
+}
+.spending-chart-loading {
+  background: var(--soft);
+  border-radius: 10px;
+}
+@keyframes spending-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes spending-grow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@media (max-width: 767px) {
+  .spending-chart {
+    padding: 20px 16px;
+    border-radius: 14px;
+    margin-bottom: 22px;
+  }
+  .spending-chart-heading {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+  .spending-chart-kicker {
+    font-size: 9px;
+    letter-spacing: 1px;
+  }
+  .spending-chart-heading h2 {
+    font-size: 20px;
+  }
+  .spending-chart-footer {
+    gap: 10px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spending-chart,
+  .spending-value,
+  .spending-bar {
+    animation: none;
+    transition: none;
+  }
 }
