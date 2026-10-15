@@ -45,7 +45,7 @@
     "@types/react-dom": "~19.1.0",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.9.2",
-    "prettier": "^3.9.9",
+    "prettier": "^3.9.10",
     "tsx": "^4.20.0"
   },
   "packageManager": "pnpm@10.28.2"
