@@ -30,6 +30,7 @@ export function legacyReceipt(row: ReceiptDto): Receipt {
     user_id: "",
     merchant: row.merchant,
     purchase_date: row.purchaseDate,
+    printed_date: row.printedDate ?? null,
     total_amount: fromMinor(row.totalMinor, row.currency),
     currency: row.currency,
     category_id: row.categoryId,

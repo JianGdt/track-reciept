@@ -113,7 +113,7 @@ export function MonthPicker({
               size="sm"
               onClick={() => select("")}
             >
-              Clear
+              All months
             </Button>
           )}
           <Button

@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -30,6 +31,35 @@ import { Switch } from "./ui/switch";
 import { Alert, AlertDescription } from "./ui/alert";
 import { VaultSelect } from "./vault-select";
 import { ScanProgress } from "./scan-progress";
+import {
+  formatReceiptDate,
+  receiptDateOptions,
+  resolveReceiptDate,
+} from "@/lib/receipt-date";
+
+function ScanField({
+  active,
+  children,
+}: {
+  active: boolean;
+  children: ReactNode;
+}) {
+  const reduceMotion = useReducedMotion();
+  return (
+    <motion.label
+      initial={false}
+      animate={{ y: active && !reduceMotion ? -2 : 0 }}
+      transition={{ duration: reduceMotion ? 0 : 0.18, ease: "easeOut" }}
+      className={
+        active
+          ? "[&_input]:border-primary [&_input]:ring-2 [&_input]:ring-primary/20 [&_[data-slot=select-trigger]]:border-primary [&_[data-slot=select-trigger]]:ring-2 [&_[data-slot=select-trigger]]:ring-primary/20"
+          : undefined
+      }
+    >
+      {children}
+    </motion.label>
+  );
+}
 
 export default function ReceiptForm({
   receipt,
@@ -46,6 +76,10 @@ export default function ReceiptForm({
 }) {
   const [id] = useState(() => receipt?.id ?? crypto.randomUUID());
   const [busy, setBusy] = useState(false);
+  const [duplicate, setDuplicate] = useState(false);
+  const [fillingField, setFillingField] = useState<keyof ReceiptInput | null>(
+    null,
+  );
   const [autoScan, setAutoScan] = useState(true);
   const [progress, setProgress] = useState<ScanProgressState>({
     stage: "preparing",
@@ -96,6 +130,7 @@ export default function ReceiptForm({
     handleSubmit,
     setValue,
     setFocus,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<ReceiptInput>({
     resolver: zodResolver(receiptSchema),
@@ -119,6 +154,9 @@ export default function ReceiptForm({
           notes: "",
         },
   });
+  const purchaseDate = watch("purchase_date");
+  const printedDate = scan?.printedDate ?? receipt?.printed_date;
+  const dateOptions = receiptDateOptions(printedDate);
   useEffect(
     () => () => {
       if (preview) URL.revokeObjectURL(preview);
@@ -126,6 +164,53 @@ export default function ReceiptForm({
     [preview],
   );
   const uploading = useRef(false);
+  async function fillScan(result: ScanResult, signal: AbortSignal) {
+    const animate = !window.matchMedia("(prefers-reduced-motion: reduce)")
+      .matches;
+    const pause = (ms: number) =>
+      new Promise<void>((resolve) => {
+        const finish = () => {
+          window.clearTimeout(timer);
+          signal.removeEventListener("abort", finish);
+          resolve();
+        };
+        const timer = window.setTimeout(finish, ms);
+        signal.addEventListener("abort", finish, { once: true });
+        if (signal.aborted) finish();
+      });
+    const fields = [
+      ["merchant", result.merchant],
+      [
+        "purchase_date",
+        resolveReceiptDate(result.printedDate, result.purchaseDate) ?? "",
+      ],
+      ...(result.total === null ? [] : [["total_amount", result.total]]),
+      ["currency", result.currency],
+      [
+        "category_id",
+        cats.find((c) => c.name.toLowerCase() === result.category)?.id ?? null,
+      ],
+    ] as [keyof ReceiptInput, ReceiptInput[keyof ReceiptInput]][];
+
+    for (const [name, value] of fields) {
+      if (signal.aborted) return;
+      if (animate) setFillingField(name);
+      if (animate && name === "merchant" && typeof value === "string") {
+        const characters = Array.from(value);
+        setValue(name, "");
+        // Keep even long merchant names under a second.
+        const step = Math.max(1, Math.ceil(characters.length / 24));
+        for (let end = step; end < characters.length; end += step) {
+          setValue(name, characters.slice(0, end).join(""));
+          await pause(30);
+          if (signal.aborted) return;
+        }
+      }
+      setValue(name, value);
+      if (animate) await pause(180);
+    }
+    if (!signal.aborted) setFillingField(null);
+  }
   async function upload(blob: Blob, shouldScan = autoScan) {
     if (!vault || uploading.current || (shouldScan && Date.now() < retryUntil))
       return;
@@ -170,21 +255,16 @@ export default function ReceiptForm({
         );
         setScan(result);
         setStatus("scanned");
-        setValue("merchant", result.merchant);
-        setValue("purchase_date", result.purchaseDate ?? today());
-        if (result.total !== null) setValue("total_amount", result.total);
-        else
+        await fillScan(result, controller.signal);
+        if (controller.signal.aborted) return;
+        if (result.total === null)
           setError(
             "We filled in the readable details, but could not read the total. Enter the amount from your receipt before saving.",
           );
-        setValue("currency", result.currency);
-        setValue(
-          "category_id",
-          cats.find((c) => c.name.toLowerCase() === result.category)?.id ??
-            null,
-        );
       } catch (e) {
         if (controller.signal.aborted) return;
+        if (e instanceof VaultError && e.code === "DUPLICATE_RECEIPT")
+          setDuplicate(true);
         if (e instanceof VaultError && e.retryAfter)
           setRetryUntil(Date.now() + e.retryAfter * 1000);
         setStatus("failed");
@@ -196,6 +276,11 @@ export default function ReceiptForm({
       }
     } catch (error) {
       if (controller.signal.aborted) return;
+      if (error instanceof VaultError && error.code === "DUPLICATE_RECEIPT") {
+        setDuplicate(true);
+        setError(error.message);
+        return;
+      }
       if (error instanceof VaultError && error.retryAfter)
         setRetryUntil(Date.now() + error.retryAfter * 1000);
       setError(
@@ -204,6 +289,7 @@ export default function ReceiptForm({
     } finally {
       uploading.current = false;
       if (!controller.signal.aborted) {
+        setFillingField(null);
         setBusy(false);
         void usage.refetch();
       }
@@ -233,6 +319,7 @@ export default function ReceiptForm({
     }
   }
   const save = handleSubmit(async (values) => {
+    if (duplicate || busy) return;
     setError("");
     const r: Receipt = {
       ...values,
@@ -240,6 +327,7 @@ export default function ReceiptForm({
       user_id: userId,
       image_path: imagePath,
       scan_raw: scan,
+      printed_date: printedDate ?? null,
       scan_status: status,
       created_at: receipt?.created_at ?? new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -249,7 +337,12 @@ export default function ReceiptForm({
         await vault.saveReceipt(r, !!receipt);
       }
       await onSaved(r);
-    } catch {
+    } catch (error) {
+      if (error instanceof VaultError && error.code === "DUPLICATE_RECEIPT") {
+        setDuplicate(true);
+        setError(error.message);
+        return;
+      }
       setError(
         "Could not save this receipt. Check your connection and try again.",
       );
@@ -375,7 +468,7 @@ export default function ReceiptForm({
             void pick(files[0]);
           }}
         >
-          {busy ? (
+          {busy && !fillingField ? (
             <ScanProgress progress={progress} preview={preview} />
           ) : (
             <button
@@ -390,7 +483,7 @@ export default function ReceiptForm({
                 <Upload size={26} />
               )}
               <strong>
-                {busy
+                {busy && !fillingField
                   ? "Reading your receipt…"
                   : imagePath
                     ? "Photo uploaded"
@@ -399,7 +492,7 @@ export default function ReceiptForm({
                       : "Click to upload or drag a receipt here"}
               </strong>
               <span>
-                {busy
+                {busy && !fillingField
                   ? "This may take up to a minute. Keep this window open."
                   : imagePath
                     ? scan
@@ -433,7 +526,7 @@ export default function ReceiptForm({
         <Alert className="form-error">
           <AlertDescription>
             {error}
-            {imagePath && status === "failed" && !busy && (
+            {imagePath && status === "failed" && !busy && !duplicate && (
               <button
                 type="button"
                 className="text-link"
@@ -445,7 +538,7 @@ export default function ReceiptForm({
                 Enter details manually
               </button>
             )}
-            {pending && vault && !busy && (
+            {pending && vault && !busy && !duplicate && (
               <button
                 type="button"
                 className="text-link"
@@ -465,13 +558,64 @@ export default function ReceiptForm({
           <Badge variant="secondary">
             <Check size={13} /> AI extracted
           </Badge>
-          <span>Review the details before saving.</span>
+          <span role="status">
+            {fillingField
+              ? "Filling in your receipt details…"
+              : "Review the details before saving."}
+          </span>
         </div>
       )}
       {scan && scan.confidence < 0.8 && (
         <p className="uncertain">
           Some details may be uncertain. Please double-check the highlighted
           fields.
+        </p>
+      )}
+      {printedDate && (
+        <p className="mb-3 text-sm text-muted-foreground">
+          Date printed on receipt:{" "}
+          <strong className="text-foreground">{printedDate}</strong>
+        </p>
+      )}
+      {dateOptions.length > 1 && (
+        <fieldset
+          disabled={busy || isSubmitting}
+          className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3"
+        >
+          <legend className="px-1 text-sm font-medium">
+            Confirm purchase date
+          </legend>
+          <p className="mb-3 text-sm text-muted-foreground">
+            This date can be read two ways. Choose the correct date, or enter it
+            below.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {dateOptions.map((date) => (
+              <Button
+                key={date}
+                type="button"
+                variant={purchaseDate === date ? "default" : "outline"}
+                aria-pressed={purchaseDate === date}
+                onClick={() =>
+                  setValue("purchase_date", date, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
+                }
+              >
+                {purchaseDate === date && (
+                  <Check size={14} aria-hidden="true" />
+                )}
+                {formatReceiptDate(date)}
+              </Button>
+            ))}
+          </div>
+        </fieldset>
+      )}
+      {scan && !purchaseDate && dateOptions.length < 2 && (
+        <p className="mb-3 text-sm text-muted-foreground" role="status">
+          We could not determine the purchase date. Enter the date from your
+          receipt below.
         </p>
       )}
       <fieldset
@@ -484,7 +628,7 @@ export default function ReceiptForm({
           { name: "total_amount", label: "Total", type: "number" },
           { name: "currency", label: "Currency", type: "text" },
         ].map(({ name, label, type }) => (
-          <label key={name}>
+          <ScanField key={name} active={fillingField === name}>
             {label}
             <Input
               type={type}
@@ -496,14 +640,21 @@ export default function ReceiptForm({
                     : undefined,
               })}
             />
+            {name === "purchase_date" && purchaseDate && (
+              <span className="text-xs text-muted-foreground">
+                {formatReceiptDate(purchaseDate)}
+              </span>
+            )}
             {errors[name as keyof ReceiptInput] && (
               <small className="field-error">
-                {errors[name as keyof ReceiptInput]?.message}
+                {name === "purchase_date"
+                  ? "Choose or enter a valid purchase date before saving."
+                  : errors[name as keyof ReceiptInput]?.message}
               </small>
             )}
-          </label>
+          </ScanField>
         ))}
-        <label>
+        <ScanField active={fillingField === "category_id"}>
           Category
           <Controller
             control={control}
@@ -522,7 +673,7 @@ export default function ReceiptForm({
               />
             )}
           />
-        </label>
+        </ScanField>
         <label>
           Payment method
           <Controller
@@ -555,7 +706,7 @@ export default function ReceiptForm({
       </fieldset>
       <div className="form-actions">
         <span className="muted">A little more organized.</span>
-        <Button type="submit" disabled={isSubmitting || busy}>
+        <Button type="submit" disabled={isSubmitting || busy || duplicate}>
           {isSubmitting ? (
             <LoaderCircle className="spin" size={16} />
           ) : (

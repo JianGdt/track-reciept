@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { SpendingChart } from "./spending-chart";
 import { MonthPicker } from "./month-picker";
+import { formatReceiptDate } from "@/lib/receipt-date";
+import { receiptFilters } from "@/lib/receipt-filters";
 import type { DashboardData } from "@/lib/dashboard-data";
 import { flushSync } from "react-dom";
 import { revealTheme } from "@/lib/theme-reveal";
@@ -224,11 +226,11 @@ function App({ initial }: { initial: DashboardData }) {
   }, [dark, demoReady]);
   const uid = session?.user.id ?? "";
   const selectedMonth = month || currentDate.slice(0, 7);
-  const filters = {
+  const filters = receiptFilters({
     q: debouncedSearch || undefined,
-    month: selectedMonth,
+    month: month || undefined,
     categoryId: category || undefined,
-  };
+  });
   const reportFilters = {
     ...filters,
     currency: CurrencySchema.catch("PHP").parse(currency),
@@ -271,12 +273,12 @@ function App({ initial }: { initial: DashboardData }) {
     : summarizeSpending(filtered, currency);
   const receiptCount = report?.count ?? filtered.length;
   const total = fromMinor(report?.totalMinor ?? 0, currency);
-  const spendingPeriod = new Date(
-    `${selectedMonth}-01T12:00:00`,
-  ).toLocaleDateString("en", {
-    month: "long",
-    year: "numeric",
-  });
+  const spendingPeriod = month
+    ? new Date(`${month}-01T12:00:00`).toLocaleDateString("en", {
+        month: "long",
+        year: "numeric",
+      })
+    : "All months";
   const breakdown = cats
     .map((c) => ({
       ...c,
@@ -433,10 +435,12 @@ function App({ initial }: { initial: DashboardData }) {
           {view !== "Settings" && (
             <section
               className="mobile-summary"
-              aria-label="Spending summary for selected month"
+              aria-label="Spending summary for current selection"
             >
               <div>
-                <span>Monthly spending · {currency}</span>
+                <span>
+                  {month ? "Monthly spending" : "Total spending"} · {currency}
+                </span>
                 <ReceiptText size={22} />
               </div>
               <strong>
@@ -516,7 +520,7 @@ function App({ initial }: { initial: DashboardData }) {
                 <SummaryCard
                   featured
                   loading={receiptsQuery.isLoading || reportQuery.isLoading}
-                  label="Monthly spending"
+                  label={month ? "Monthly spending" : "Total spending"}
                   icon={<ChartNoAxesCombined size={19} />}
                   value={
                     reportQuery.error
@@ -601,19 +605,14 @@ function App({ initial }: { initial: DashboardData }) {
                         ...cats.map((c) => ({ value: c.id, label: c.name })),
                       ]}
                     />
-                    <MonthPicker
-                      value={selectedMonth}
-                      onChange={setMonth}
-                      allowAll={false}
-                    />
-                    {(search ||
-                      selectedMonth !== currentDate.slice(0, 7) ||
-                      category) && (
+                    <MonthPicker value={month} onChange={setMonth} />
+                    {(search || month || category) && (
                       <button
                         className="icon-button"
                         aria-label="Clear filters"
                         onClick={() => {
                           setSearch("");
+                          setDebouncedSearch("");
                           setMonth("");
                           setCategory("");
                         }}
@@ -659,14 +658,14 @@ function App({ initial }: { initial: DashboardData }) {
                     <div className="empty">
                       <FolderOpen size={38} />
                       <h3>
-                        {receipts.length
+                        {search || month || category
                           ? "No matching receipts"
-                          : "No receipts this month"}
+                          : "No saved receipts yet"}
                       </h3>
                       <p>
-                        {receipts.length
+                        {search || month || category
                           ? "Try another store, category, or month."
-                          : "Choose another month or add a receipt for this month."}
+                          : "Upload a photo or enter the details to save your first receipt."}
                       </p>
                       <Button
                         variant="outline"
@@ -709,13 +708,7 @@ function App({ initial }: { initial: DashboardData }) {
                               <span>
                                 {date === currentDate
                                   ? "Today"
-                                  : new Date(
-                                      date + "T12:00:00",
-                                    ).toLocaleDateString("en-PH", {
-                                      weekday: "long",
-                                      month: "short",
-                                      day: "numeric",
-                                    })}
+                                  : formatReceiptDate(date)}
                               </span>
                               <span>
                                 {rows?.length} receipt
@@ -906,17 +899,15 @@ function App({ initial }: { initial: DashboardData }) {
               onSaved={async (r) => {
                 if (!vault) persist([r, ...local.filter((x) => x.id !== r.id)]);
                 else await refresh();
-                // A successful save should reveal the receipt, even when its
-                // purchase date or category falls outside the previous filters.
-                setMonth(r.purchase_date.slice(0, 7));
+                // Show the complete archive so receipts from other months
+                // do not appear to disappear after saving a new receipt.
+                setMonth("");
                 setSearch("");
                 setDebouncedSearch("");
                 setCategory("");
                 setView("Receipts");
                 setEditing(undefined);
-                setNotice(
-                  "Receipt saved. Showing receipts for its purchase month.",
-                );
+                setNotice("Receipt saved. Showing all saved receipts.");
               }}
             />
           )}
@@ -953,7 +944,13 @@ function App({ initial }: { initial: DashboardData }) {
               </div>
               <dl>
                 <dt>Purchased</dt>
-                <dd>{detail.purchase_date}</dd>
+                <dd>{formatReceiptDate(detail.purchase_date)}</dd>
+                {detail.printed_date && (
+                  <>
+                    <dt>Printed date</dt>
+                    <dd>{detail.printed_date}</dd>
+                  </>
+                )}
                 <dt>Category</dt>
                 <dd>{names[detail.category_id ?? ""] ?? "Other"}</dd>
                 <dt>Payment</dt>

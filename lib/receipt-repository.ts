@@ -23,6 +23,24 @@ import { firebaseAdmin } from "./firebase-admin";
 import { ServiceError } from "./service-error";
 import type { Claim, ClaimStore } from "./idempotency";
 import { LIMITS } from "./limits";
+import { DUPLICATE_RECEIPT_MESSAGE } from "./receipt-duplicates";
+
+export async function assertReceiptNotDuplicate(
+  uid: string,
+  id: string,
+  keys: string[],
+  tx?: Transaction,
+) {
+  if (!keys.length) return;
+  const query = userCollection(uid, "receipts").where(
+    "duplicateKeys",
+    "array-contains-any",
+    keys,
+  );
+  const matches = tx ? await tx.get(query) : await query.get();
+  if (matches.docs.some((doc) => doc.id !== id && !doc.get("deleting")))
+    throw new ServiceError(409, DUPLICATE_RECEIPT_MESSAGE, "DUPLICATE_RECEIPT");
+}
 
 const iso = (value: unknown) =>
   value instanceof Timestamp
@@ -64,6 +82,7 @@ export function decodeReceipt(id: string, data: DocumentData): ReceiptDto {
   return ReceiptDtoSchema.parse({
     id,
     merchant: data.merchant,
+    printedDate: data.printedDate ?? null,
     purchaseDate:
       data.purchaseDate instanceof Timestamp
         ? data.purchaseDate.toDate().toISOString().slice(0, 10)
@@ -141,6 +160,7 @@ export async function listReceipts(
       "merchant",
       "purchaseDate",
       "purchase_date",
+      "printedDate",
       "totalMinor",
       "total_amount",
       "currency",
@@ -259,8 +279,11 @@ export async function saveReceipt(
       throw new ServiceError(422, "Upload your photo before saving.");
     let receiptCount: number | undefined;
     const profileRef = firebaseAdmin().db.collection("users").doc(uid);
+    const profile = await tx.get(profileRef);
+    const duplicateKeys: string[] =
+      old.get("duplicateKeys") ?? draft.get("duplicateKeys") ?? [];
+    await assertReceiptNotDuplicate(uid, id, duplicateKeys, tx);
     if (!old.exists) {
-      const profile = await tx.get(profileRef);
       receiptCount = profile.get("receiptCount");
       if (receiptCount === undefined) {
         // One-time initialization for existing accounts, under the same transaction.
@@ -284,6 +307,8 @@ export async function saveReceipt(
     }
     const result = ReceiptDtoSchema.parse({
       ...candidate,
+      printedDate:
+        previous?.printedDate ?? draft.get("scan")?.printedDate ?? null,
       id,
       createdAt: previous?.createdAt ?? now,
       updatedAt: now,
@@ -294,6 +319,7 @@ export async function saveReceipt(
     const imagePath = result.hasPhoto ? `receipts/${uid}/${id}.jpg` : null;
     tx.set(ref, {
       ...result,
+      duplicateKeys,
       imagePath,
       purchaseDate: Timestamp.fromDate(
         new Date(`${result.purchaseDate}T00:00:00Z`),
@@ -308,8 +334,19 @@ export async function saveReceipt(
       createFingerprint: old.get("createFingerprint") ?? fingerprint(input),
     });
     tx.delete(userCollection(uid, "drafts").doc(id));
-    if (receiptCount !== undefined)
-      tx.set(profileRef, { receiptCount: receiptCount + 1 }, { merge: true });
+    // Every save touches the same owner document, serializing competing
+    // creates/edits so a duplicate query is rechecked after a concurrent save.
+    tx.set(
+      profileRef,
+      {
+        receiptWriteRevision:
+          Number(profile.get("receiptWriteRevision") ?? 0) + 1,
+        ...(receiptCount !== undefined
+          ? { receiptCount: receiptCount + 1 }
+          : {}),
+      },
+      { merge: true },
+    );
     return result;
   });
 }

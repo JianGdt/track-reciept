@@ -17,7 +17,7 @@ import { Separator } from "./ui/separator";
 import { Switch } from "./ui/switch";
 import { VaultSelect } from "./vault-select";
 import { Badge } from "./ui/badge";
-import { Input } from "./ui/input";
+import { PasswordInput } from "./ui/password-input";
 
 export default function SettingsPanel({
   dark,
@@ -142,8 +142,7 @@ export default function SettingsPanel({
             <p>Permanently remove your account, receipts, and photos.</p>
             <label>
               Confirm your password
-              <Input
-                type="password"
+              <PasswordInput
                 autoComplete="current-password"
                 value={deletePassword}
                 onChange={(event) => setDeletePassword(event.target.value)}

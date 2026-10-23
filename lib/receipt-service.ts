@@ -12,6 +12,7 @@ import * as repository from "./receipt-repository";
 import { photoStorage } from "./storage";
 import { photoStorageError } from "./s3-receipts";
 import { extractReceipt } from "./gemini";
+import { scanModel, FALLBACK_SCAN_TIMEOUT_MS } from "./gemini-config";
 import { ScanError, withScanFallback } from "./gemini-response";
 import { ServiceError } from "./service-error";
 import { once } from "./idempotency";
@@ -21,6 +22,43 @@ import { firebaseAdmin } from "./firebase-admin";
 import { prepareReceiptImage } from "./receipt-image";
 import { addMonthlySpending, type MonthlySpending } from "./spending-summary";
 import { ScanStateSchema, canRecoverScan } from "./scan-recovery";
+import { receiptPhotoKey, receiptScanKey } from "./receipt-duplicates";
+import { receiptDateOptions } from "./receipt-date";
+
+async function indexMatchingLegacyPhotos(uid: string, scan: ScanDto) {
+  const dates = receiptDateOptions(scan.printedDate);
+  if (!dates.length && scan.purchaseDate) dates.push(scan.purchaseDate);
+  if (!dates.length || scan.totalMinor === null) return;
+  // Older receipts have no fingerprints. Only inspect same-date/amount photos,
+  // then retain their hash so subsequent checks do not download them again.
+  const rows = await repository
+    .userCollection(uid, "receipts")
+    .where("purchase_date", "in", dates)
+    .get();
+  for (const doc of rows.docs) {
+    if (doc.get("deleting") || doc.get("duplicateKeys")?.length) continue;
+    const receipt = repository.decodeReceipt(doc.id, doc.data());
+    if (
+      !receipt.hasPhoto ||
+      receipt.totalMinor !== scan.totalMinor ||
+      receipt.currency !== scan.currency
+    )
+      continue;
+    const bytes = await storageAction((storage) =>
+      storage.download(`receipts/${uid}/${doc.id}.jpg`),
+    );
+    const key = receiptPhotoKey(bytes);
+    await firebaseAdmin().db.runTransaction(async (tx) => {
+      const current = await tx.get(doc.ref);
+      if (
+        current.exists &&
+        !current.get("deleting") &&
+        !current.get("duplicateKeys")?.length
+      )
+        tx.update(doc.ref, { duplicateKeys: [key] });
+    });
+  }
+}
 
 async function storageAction<T>(
   action: (storage: ReturnType<typeof photoStorage>) => Promise<T>,
@@ -64,6 +102,8 @@ export async function uploadPhoto(uid: string, id: string, bytes: Buffer) {
     86_400_000,
   );
   const { full, thumbnail } = await prepareReceiptImage(bytes);
+  const duplicateKeys = [receiptPhotoKey(full)];
+  await repository.assertReceiptNotDuplicate(uid, id, duplicateKeys);
   await storageAction(async (storage) => {
     await storage.upload(`receipts/${uid}/${id}.jpg`, full);
     await storage.upload(`receipts/${uid}/${id}.thumb.jpg`, thumbnail);
@@ -71,6 +111,7 @@ export async function uploadPhoto(uid: string, id: string, bytes: Buffer) {
   try {
     await repository.saveDraft(uid, id, {
       uploaded: true,
+      duplicateKeys,
       imagePath: `receipts/${uid}/${id}.jpg`,
       updatedAt: new Date().toISOString(),
     });
@@ -137,6 +178,11 @@ export async function receiptScanState(uid: string, id: string) {
   ]);
   if (!draft.get("uploaded") || draft.get("deleted"))
     throw new ServiceError(404, "Upload a receipt photo first.");
+  await repository.assertReceiptNotDuplicate(
+    uid,
+    id,
+    draft.get("duplicateKeys") ?? [],
+  );
   if (draft.get("scan"))
     return ScanStateSchema.parse({ state: "done", result: draft.get("scan") });
   const expiresAt = Number(claim.get("expiresAt") ?? 0);
@@ -180,6 +226,11 @@ export async function scanReceipt(uid: string, id: string) {
       const doc = await draft.get();
       if (!doc.get("uploaded") || doc.get("deleted"))
         throw new ServiceError(404, "Upload a receipt photo first.");
+      await repository.assertReceiptNotDuplicate(
+        uid,
+        id,
+        doc.get("duplicateKeys") ?? [],
+      );
       if (doc.get("scan")) return ScanDtoSchema.parse(doc.get("scan"));
 
       await repository.rateLimit(
@@ -197,7 +248,7 @@ export async function scanReceipt(uid: string, id: string) {
         refund = await reserveScan(uid);
         let raw;
         try {
-          const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+          const model = scanModel();
           const fallback = process.env.GEMINI_FALLBACK_MODEL?.trim();
           raw = await withScanFallback(
             () => extractReceipt(bytes, model),
@@ -208,9 +259,13 @@ export async function scanReceipt(uid: string, id: string) {
                   await refund!();
                   refund = undefined;
                   refund = await reserveScan(uid);
-                  // Bound both provider attempts to 45 seconds total, leaving
+                  // Bound both provider attempts to 35 seconds total, leaving
                   // room for database/storage work in the 60-second route.
-                  return extractReceipt(bytes, fallback, 10_000);
+                  return extractReceipt(
+                    bytes,
+                    fallback,
+                    FALLBACK_SCAN_TIMEOUT_MS,
+                  );
                 }
               : undefined,
           );
@@ -241,7 +296,16 @@ export async function scanReceipt(uid: string, id: string) {
             "INVALID_AI_OUTPUT",
           );
         }
-        await repository.saveDraft(uid, id, { scan: result });
+        const scanKey = receiptScanKey(result);
+        await indexMatchingLegacyPhotos(uid, result);
+        const duplicateKeys = [
+          ...new Set([
+            ...(doc.get("duplicateKeys") ?? []),
+            ...(scanKey ? [scanKey] : []),
+          ]),
+        ];
+        await repository.saveDraft(uid, id, { scan: result, duplicateKeys });
+        await repository.assertReceiptNotDuplicate(uid, id, duplicateKeys);
         return result;
       } catch (error) {
         if (

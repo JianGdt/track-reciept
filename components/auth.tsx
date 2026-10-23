@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Card } from "./ui/card";
 import { Brand } from "./brand";
 import { Input } from "./ui/input";
+import { PasswordInput } from "./ui/password-input";
 import { Button } from "./ui/button";
 
 export function Auth() {
@@ -54,8 +55,8 @@ export function Auth() {
           </label>
           <label>
             Password
-            <Input
-              type="password"
+            <PasswordInput
+              key={signup ? "signup" : "login"}
               autoComplete={signup ? "new-password" : "current-password"}
               minLength={8}
               required

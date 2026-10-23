@@ -27,6 +27,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "firebase-admin": "^13.6.0",
+    "framer-motion": "^14.6.0",
     "lucide-react": "^0.468.0",
     "next": "^16.1.0",
     "react": "19.1.0",
@@ -43,10 +44,10 @@
     "@types/node": "^22.0.0",
     "@types/react": "~19.1.0",
     "@types/react-dom": "~19.1.0",
-    "tailwindcss": "^4.1.0",
-    "typescript": "^5.9.2",
     "prettier": "^3.9.9",
-    "tsx": "^4.20.0"
+    "tailwindcss": "^4.1.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.2"
   },
   "packageManager": "pnpm@10.28.2"
 }

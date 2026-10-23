@@ -7,7 +7,8 @@ import { firebaseAdmin } from "./firebase-admin";
 import { listReceipts, listCategories, rateLimit } from "./receipt-repository";
 import { LIMITS } from "./limits";
 import { legacyReceipt, type Session } from "./vault-client";
-import { ReceiptFiltersSchema, today, type ReceiptFilters } from "./shared";
+import { today } from "./shared";
+import { receiptFilters } from "./receipt-filters";
 
 export const currentSession = cache(async (): Promise<Session | null> => {
   const requestHeaders = await headers();
@@ -29,14 +30,8 @@ export const currentSession = cache(async (): Promise<Session | null> => {
 export async function dashboardData(
   params: Record<string, string | string[] | undefined>,
 ) {
-  const parsed = ReceiptFiltersSchema.safeParse({
-    q: params.q,
-    month: params.month,
-    categoryId: params.categoryId,
-  });
-  const filters: ReceiptFilters = parsed.success ? parsed.data : {};
+  const filters = receiptFilters(params);
   const renderDate = today();
-  filters.month ||= renderDate.slice(0, 7);
   const session = await currentSession();
   if (!session) return { session: null, filters, renderDate, view: "Receipts" };
   const uid = session.user.id;

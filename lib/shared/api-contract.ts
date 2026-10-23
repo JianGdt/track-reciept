@@ -81,6 +81,7 @@ export const UpdateReceiptSchema = ReceiptFieldsSchema.partial()
     "Provide a field to update.",
   );
 export const ReceiptDtoSchema = ReceiptFieldsSchema.extend({
+  printedDate: z.string().max(80).nullable().optional(),
   // Existing receipts remain readable; new/edited fields have tighter limits.
   merchant: z.string().min(1).max(200),
   notes: z.string().max(2000),
@@ -93,7 +94,10 @@ export const ReceiptDtoSchema = ReceiptFieldsSchema.extend({
 export const ScanDtoSchema = z
   .object({
     merchant: z.string().max(120),
+    receiptNumber: z.string().max(120).nullable().optional(),
+    merchantAddress: z.string().max(300).nullable().optional(),
     purchaseDate: DateSchema.nullable(),
+    printedDate: z.string().max(80).nullable().optional(),
     totalMinor: z.number().int().min(0).max(999_999_999_999).nullable(),
     currency: CurrencySchema,
     category: z.enum(["food", "groceries", "transport", "bills", "other"]),

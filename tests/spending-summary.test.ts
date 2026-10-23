@@ -10,6 +10,7 @@ import {
   type MonthlySpending,
 } from "../lib/spending-summary";
 import { ReportSchema } from "../lib/shared";
+import { receiptFilters } from "../lib/receipt-filters";
 
 const manual: Receipt = {
   id: "manual",
@@ -35,6 +36,24 @@ const scanned: Receipt = {
   total_amount: 285.25,
   scan_status: "scanned",
 };
+
+test("clearing filters and reloading without month keeps receipts from every month visible", () => {
+  const saved = [manual, scanned];
+  const october = receiptFilters({ month: "2026-10" });
+  assert.deepEqual(
+    selectReceipts(saved, october).map((row) => row.id),
+    ["scanned"],
+  );
+  const cleared = receiptFilters({ month: "", q: "", categoryId: "" });
+  const reloaded = receiptFilters(Object.fromEntries(new URLSearchParams("")));
+  for (const filters of [cleared, reloaded]) {
+    assert.equal(filters.month, undefined);
+    assert.deepEqual(
+      selectReceipts(saved, filters).map((row) => row.id),
+      ["manual", "scanned"],
+    );
+  }
+});
 
 test("all months includes manual and scanned receipts regardless of purchase month", () => {
   const summary = summarizeSpending(

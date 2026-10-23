@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ScanDtoSchema, type ScanDto } from "@/lib/shared";
+import { resolveReceiptDate } from "./receipt-date";
 
 export class ScanError extends Error {
   constructor(
@@ -163,6 +164,10 @@ export function parseReceiptResponse(data: unknown): ScanDto {
   // Preserve readable fields without inventing an unreadable amount.
   return {
     ...result.data,
+    purchaseDate: resolveReceiptDate(
+      result.data.printedDate,
+      result.data.purchaseDate,
+    ),
     confidence:
       result.data.totalMinor === null
         ? Math.min(result.data.confidence, 0.5)

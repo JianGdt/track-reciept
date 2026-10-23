@@ -1,6 +1,11 @@
 import "server-only";
 import { CurrencySchema, type ScanDto } from "@/lib/shared";
 import {
+  scanModel,
+  scanThinkingConfig,
+  SCAN_TIMEOUT_MS,
+} from "./gemini-config";
+import {
   ScanError,
   parseReceiptResponse,
   providerScanError,
@@ -8,8 +13,8 @@ import {
 } from "./gemini-response";
 export async function extractReceipt(
   bytes: Buffer,
-  model = process.env.GEMINI_MODEL || "gemini-3.8-flash",
-  timeoutMs = 35_000,
+  model = scanModel(),
+  timeoutMs = SCAN_TIMEOUT_MS,
 ): Promise<ScanDto> {
   // One attempt per reservation: provider failures must not amplify spend.
   return extractWithModel(bytes, model, timeoutMs);
@@ -28,6 +33,19 @@ async function extractWithModel(
       "SCAN_NOT_CONFIGURED",
     );
   let response: Response;
+  const started = Date.now();
+  const logTransportError = (error: unknown) => {
+    const failure = scanTransportError(error);
+    console.error(
+      JSON.stringify({
+        code: failure.code,
+        model,
+        durationMs: Date.now() - started,
+        timeoutMs,
+      }),
+    );
+    return failure;
+  };
   try {
     response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
@@ -54,21 +72,34 @@ async function extractWithModel(
                   },
                 },
                 {
-                  text: "Read this receipt: merchant, purchase date, final total in integer minor currency units, currency, category, and confidence.",
+                  text: "Read this receipt: merchant, purchase date, final total in integer minor currency units, currency, category, and confidence. Copy the exact printed purchase date into printedDate, preserving its order and separators, excluding the time. Use null if missing or unreadable. For ambiguous numeric dates such as 10/04/2026, set purchaseDate to null; never guess MM/DD versus DD/MM from the store or country. Normalize only unambiguous dates to YYYY-MM-DD. Never substitute today's date.",
                 },
               ],
             },
           ],
           generationConfig: {
-            ...(model.startsWith("gemini-3")
-              ? { thinkingConfig: { thinkingLevel: "low" } }
-              : {}),
+            thinkingConfig: scanThinkingConfig(model),
             maxOutputTokens: 1024,
             responseMimeType: "application/json",
             responseJsonSchema: {
               type: "object",
               properties: {
                 merchant: { type: "string" },
+                receiptNumber: {
+                  type: ["string", "null"],
+                  description:
+                    "Exact unique sales invoice / receipt / transaction number, preserving leading zeros. Not the tax ID, terminal, cashier, or item count. Null if unreadable or absent.",
+                },
+                merchantAddress: {
+                  type: ["string", "null"],
+                  description:
+                    "Merchant branch address printed on receipt, excluding customer address. Null if unreadable or absent.",
+                },
+                printedDate: {
+                  type: ["string", "null"],
+                  description:
+                    "Exact purchase date text as printed, without time; null if unreadable",
+                },
                 purchaseDate: {
                   type: ["string", "null"],
                   description: "YYYY-MM-DD or null when missing",
@@ -89,6 +120,9 @@ async function extractWithModel(
               },
               required: [
                 "merchant",
+                "receiptNumber",
+                "merchantAddress",
+                "printedDate",
                 "purchaseDate",
                 "totalMinor",
                 "currency",
@@ -102,7 +136,7 @@ async function extractWithModel(
       },
     );
   } catch (error) {
-    throw scanTransportError(error);
+    throw logTransportError(error);
   }
   if (!response.ok) {
     // Keep provider bodies, credentials, and receipt contents out of logs.
@@ -123,7 +157,7 @@ async function extractWithModel(
       error instanceof Error &&
       ["TimeoutError", "AbortError"].includes(error.name)
     )
-      throw scanTransportError(error);
+      throw logTransportError(error);
     throw new ScanError(
       502,
       "The scanner returned an incomplete result. Please retry the scan.",

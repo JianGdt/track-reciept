@@ -1038,6 +1038,36 @@ label textarea {
   width: 100%;
   font-size: 13px;
 }
+.password-field {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+.password-field input {
+  padding-right: 48px;
+}
+.password-toggle {
+  position: absolute;
+  top: 0;
+  right: 4px;
+  bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  padding: 0 8px;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+.password-toggle:hover {
+  color: var(--ink);
+}
+.password-toggle:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
 .full-width {
   grid-column: 1/-1;
 }

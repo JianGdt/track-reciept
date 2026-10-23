@@ -43,7 +43,10 @@ export const receiptSchema = z
 export const scanSchema = z
   .object({
     merchant: z.string().max(120),
+    receiptNumber: z.string().max(120).nullable().optional(),
+    merchantAddress: z.string().max(300).nullable().optional(),
     purchaseDate: date.nullable(),
+    printedDate: z.string().max(80).nullable().optional(),
     total: z.number().finite().nonnegative().max(9999999999.99).nullable(),
     currency: CurrencySchema,
     category: z.enum(["food", "groceries", "transport", "bills", "other"]),
@@ -66,6 +69,7 @@ export type Category = {
   created_at: string;
 };
 export type Receipt = ReceiptInput & {
+  printed_date?: string | null;
   id: string;
   user_id: string;
   image_path: string | null;
