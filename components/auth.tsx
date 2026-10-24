@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Card } from "./ui/card";
 import { Brand } from "./brand";
 import { Input } from "./ui/input";
@@ -9,9 +10,15 @@ import { Button } from "./ui/button";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 
-export function Auth({ initialMessage = "" }: { initialMessage?: string }) {
+export function Auth({
+  initialMessage = "",
+  initialSignup = false,
+}: {
+  initialMessage?: string;
+  initialSignup?: boolean;
+}) {
   const router = useRouter();
-  const [signup, setSignup] = useState(false);
+  const signup = initialSignup;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const shownMessage = useRef("");
@@ -48,11 +55,11 @@ export function Auth({ initialMessage = "" }: { initialMessage?: string }) {
                     : (error.message ?? "Could not sign in. Please try again."),
                 );
               } else if (signup) {
-                setSignup(false);
                 setPassword("");
                 toast.success(
                   "Check your inbox and spam folder for a verification link. If you already have an account, log in or resend verification below.",
                 );
+                router.replace("/sign-in");
               } else {
                 router.replace("/");
                 router.refresh();
@@ -121,17 +128,18 @@ export function Auth({ initialMessage = "" }: { initialMessage?: string }) {
         >
           Resend verification email
         </button>
-        <button
+        <Link
           className="text-link"
-          disabled={busy}
-          onClick={() => {
-            setSignup(!signup);
+          href={signup ? "/sign-in" : "/register"}
+          aria-disabled={busy}
+          onClick={(event) => {
+            if (busy) event.preventDefault();
           }}
         >
           {signup
             ? "Already have an account? Log in"
             : "New here? Create an account"}
-        </button>
+        </Link>
       </Card>
     </main>
   );
