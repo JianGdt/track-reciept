@@ -1,18 +1,26 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "./ui/card";
 import { Brand } from "./brand";
 import { Input } from "./ui/input";
 import { PasswordInput } from "./ui/password-input";
 import { Button } from "./ui/button";
+import { toast } from "sonner";
+import { authClient } from "@/lib/auth-client";
 
-export function Auth() {
+export function Auth({ initialMessage = "" }: { initialMessage?: string }) {
   const router = useRouter();
   const [signup, setSignup] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [message, setMessage] = useState("");
+  const shownMessage = useRef("");
+  useEffect(() => {
+    if (initialMessage && shownMessage.current !== initialMessage) {
+      toast.info(initialMessage, { id: "email-verification", duration: 10000 });
+      shownMessage.current = initialMessage;
+    }
+  }, [initialMessage]);
   const [busy, setBusy] = useState(false);
   return (
     <main className="auth-page">
@@ -24,20 +32,33 @@ export function Auth() {
           onSubmit={async (e) => {
             e.preventDefault();
             setBusy(true);
-            setMessage("");
             try {
-              const { vault } = await import("@/lib/client");
               const { error } = signup
-                ? await vault!.auth.signUp({ email, password })
-                : await vault!.auth.signInWithPassword({ email, password });
-              if (error) setMessage(error.message);
-              else {
-                if (signup)
-                  setMessage("Your account is ready. Welcome to Resibo’ko.");
+                ? await authClient.signUp.email({
+                    email,
+                    password,
+                    name: email.split("@")[0] || "Receipt owner",
+                    callbackURL: "/verify-email",
+                  })
+                : await authClient.signIn.email({ email, password });
+              if (error) {
+                toast.error(
+                  error.code === "EMAIL_NOT_VERIFIED"
+                    ? "Verify your email before logging in. Check your inbox or resend the verification email below."
+                    : (error.message ?? "Could not sign in. Please try again."),
+                );
+              } else if (signup) {
+                setSignup(false);
+                setPassword("");
+                toast.success(
+                  "Check your inbox and spam folder for a verification link. If you already have an account, log in or resend verification below.",
+                );
+              } else {
+                router.replace("/");
                 router.refresh();
               }
             } catch {
-              setMessage("Could not connect. Please try again.");
+              toast.error("Could not connect. Please try again.");
             } finally {
               setBusy(false);
             }
@@ -64,16 +85,47 @@ export function Auth() {
               onChange={(e) => setPassword(e.target.value)}
             />
           </label>
-          {message && <p role="status">{message}</p>}
           <Button disabled={busy}>
             {busy ? "One moment…" : signup ? "Create account" : "Log in"}
           </Button>
         </form>
         <button
+          type="button"
           className="text-link"
+          disabled={busy || !email.trim()}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              const { error } = await authClient.sendVerificationEmail({
+                email: email.trim(),
+                callbackURL: "/verify-email",
+              });
+              if (error) {
+                toast.error(
+                  error.message ??
+                    "Could not send verification. Please try again later.",
+                );
+              } else {
+                toast.success("Verification email requested", {
+                  description:
+                    "If this email belongs to an unverified account, check your inbox and spam folder. Wait at least a minute before requesting another.",
+                  duration: 10000,
+                });
+              }
+            } catch {
+              toast.error("Could not connect. Please try again.");
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Resend verification email
+        </button>
+        <button
+          className="text-link"
+          disabled={busy}
           onClick={() => {
             setSignup(!signup);
-            setMessage("");
           }}
         >
           {signup

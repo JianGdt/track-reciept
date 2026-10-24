@@ -29,6 +29,8 @@ export async function requireUser(request: NextRequest) {
   }
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session) throw new ApiError(401, "Please log in again.");
+  if (session.user.emailVerified !== true)
+    throw new ApiError(403, "Verify your email before using the app.");
   if (
     (
       await firebaseAdmin().db.collection("users").doc(session.user.id).get()

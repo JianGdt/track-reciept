@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { ThemeTokens } from "./theme";
+import { Toaster } from "@/components/ui/sonner";
 import { PwaProvider } from "@/components/pwa";
 const geist = localFont({
   src: "./fonts/Geist-Variable.woff2",
@@ -19,7 +20,11 @@ export const metadata: Metadata = {
   applicationName: "ResiVault",
   appleWebApp: { capable: true, statusBarStyle: "default", title: "ResiVault" },
   icons: {
-    icon: { url: "/icons/resivault-tab.svg", type: "image/svg+xml", sizes: "any" },
+    icon: {
+      url: "/icons/resivault-tab.svg",
+      type: "image/svg+xml",
+      sizes: "any",
+    },
     apple: "/icons/apple-touch-icon.png",
   },
   title: "ResiVault — Receipt Tracker",
@@ -33,6 +38,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <body suppressHydrationWarning>
         <ThemeTokens />
         <PwaProvider>{children}</PwaProvider>
+        <Toaster />
       </body>
     </html>
   );

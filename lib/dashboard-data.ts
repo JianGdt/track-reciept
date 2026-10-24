@@ -18,7 +18,7 @@ export const currentSession = cache(async (): Promise<Session | null> => {
   const session = await getAuthServer().api.getSession({
     headers: requestHeaders,
   });
-  if (!session) return null;
+  if (!session || session.user.emailVerified !== true) return null;
   const user = await firebaseAdmin()
     .db.collection("users")
     .doc(session.user.id)

@@ -1,4 +1,5 @@
 "use client";
+import { toast } from "sonner";
 import { useState } from "react";
 import { Download, LogOut } from "lucide-react";
 import type { Category } from "@/lib/shared";
@@ -27,7 +28,6 @@ export default function SettingsPanel({
   download,
   cats,
   session,
-  setNotice,
 }: {
   dark: boolean;
   toggleTheme: (origin?: HTMLElement | null) => void;
@@ -36,7 +36,6 @@ export default function SettingsPanel({
   download: () => Promise<void>;
   cats: Category[];
   session: Session | null;
-  setNotice: (message: string) => void;
 }) {
   const [deletePassword, setDeletePassword] = useState("");
   const [deletingAccount, setDeletingAccount] = useState(false);
@@ -116,8 +115,13 @@ export default function SettingsPanel({
               <Button
                 variant="outline"
                 onClick={async () => {
-                  const { error } = await vault!.auth.signOut();
-                  if (error) setNotice("Could not sign out. Try again.");
+                  try {
+                    const { error } = await vault!.auth.signOut();
+                    if (error) toast.error("Could not sign out. Try again.");
+                    else toast.success("Signed out.");
+                  } catch {
+                    toast.error("Could not sign out. Try again.");
+                  }
                 }}
               >
                 <LogOut size={16} /> Sign out
@@ -160,10 +164,17 @@ export default function SettingsPanel({
               )
                 return;
               setDeletingAccount(true);
-              const { error } = await vault!.auth.deleteAccount(deletePassword);
-              setDeletePassword("");
-              setDeletingAccount(false);
-              if (error) setNotice(error.message);
+              try {
+                const { error } =
+                  await vault!.auth.deleteAccount(deletePassword);
+                if (error) toast.error(error.message);
+                else toast.success("Account deleted.");
+              } catch {
+                toast.error("Could not delete your account. Please try again.");
+              } finally {
+                setDeletePassword("");
+                setDeletingAccount(false);
+              }
             }}
           >
             {deletingAccount ? "Deleting…" : "Delete account"}

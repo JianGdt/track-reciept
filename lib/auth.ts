@@ -5,6 +5,11 @@ import { firebaseAdmin } from "./firebase-admin";
 import { loadServerEnv } from "./server-env";
 import { deleteAccountData } from "./account-service";
 import { APIError } from "better-auth/api";
+import { sendVerificationEmail } from "./verification-email";
+import {
+  emailAndPasswordPolicy,
+  emailVerificationPolicy,
+} from "./email-verification-policy";
 export function trustedOrigins() {
   return [
     process.env.BETTER_AUTH_URL ?? "http://localhost:3100",
@@ -36,7 +41,11 @@ function createAuthServer() {
         verificationTokens: "authVerifications",
       },
     }),
-    emailAndPassword: { enabled: true, minPasswordLength: 8 },
+    emailAndPassword: emailAndPasswordPolicy,
+    emailVerification: {
+      ...emailVerificationPolicy,
+      sendVerificationEmail,
+    },
     user: {
       deleteUser: {
         enabled: true,
@@ -59,7 +68,16 @@ function createAuthServer() {
       },
     },
     trustedOrigins: trustedOrigins(),
-    rateLimit: { enabled: true, storage: "database", window: 60, max: 60 },
+    rateLimit: {
+      enabled: true,
+      storage: "database",
+      window: 60,
+      max: 60,
+      customRules: {
+        "/sign-up/email": { window: 600, max: 5 },
+        "/send-verification-email": { window: 60, max: 3 },
+      },
+    },
     advanced: { database: { generateId: "uuid" } },
   });
 }

@@ -9,6 +9,7 @@ const config: NextConfig = {
     qualities: [60, 75],
   },
   experimental: {
+    agentUpgrade: "security",
     turbopackFileSystemCacheForDev:
       process.env.NEXT_DISABLE_DEV_CACHE !== "true",
   },

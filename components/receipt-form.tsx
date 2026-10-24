@@ -28,7 +28,7 @@ import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { Badge } from "./ui/badge";
 import { Switch } from "./ui/switch";
-import { Alert, AlertDescription } from "./ui/alert";
+import { toast } from "sonner";
 import { VaultSelect } from "./vault-select";
 import { ScanProgress } from "./scan-progress";
 import {
@@ -93,7 +93,19 @@ export default function ReceiptForm({
       scanController.current?.abort();
     };
   }, []);
-  const [error, setError] = useState("");
+  const [error, setErrorState] = useState("");
+  const errorToastId = `receipt-error-${id}`;
+  function setError(message: string) {
+    setErrorState(message);
+    if (message) toast.error(message, { id: errorToastId, duration: 10000 });
+    else toast.dismiss(errorToastId);
+  }
+  useEffect(
+    () => () => {
+      toast.dismiss(errorToastId);
+    },
+    [errorToastId],
+  );
   const [preview, setPreview] = useState("");
   const [imagePath, setImagePath] = useState(receipt?.image_path ?? null);
   const [scan, setScan] = useState<ScanResult | null>(
@@ -523,35 +535,32 @@ export default function ReceiptForm({
         </Button>
       )}
       {error && (
-        <Alert className="form-error">
-          <AlertDescription>
-            {error}
-            {imagePath && status === "failed" && !busy && !duplicate && (
-              <button
-                type="button"
-                className="text-link"
-                onClick={() => {
-                  setError("");
-                  setFocus("merchant");
-                }}
-              >
-                Enter details manually
-              </button>
-            )}
-            {pending && vault && !busy && !duplicate && (
-              <button
-                type="button"
-                className="text-link"
-                disabled={retrySeconds > 0}
-                onClick={() => upload(pending, imagePath ? true : autoScan)}
-              >
-                {retrySeconds > 0
-                  ? `Retry in ${retrySeconds}s`
-                  : `Retry ${imagePath ? "scan" : "upload"}`}
-              </button>
-            )}
-          </AlertDescription>
-        </Alert>
+        <div className="form-error" aria-label="Receipt recovery options">
+          {imagePath && status === "failed" && !busy && !duplicate && (
+            <button
+              type="button"
+              className="text-link"
+              onClick={() => {
+                setError("");
+                setFocus("merchant");
+              }}
+            >
+              Enter details manually
+            </button>
+          )}
+          {pending && vault && !busy && !duplicate && (
+            <button
+              type="button"
+              className="text-link"
+              disabled={retrySeconds > 0}
+              onClick={() => upload(pending, imagePath ? true : autoScan)}
+            >
+              {retrySeconds > 0
+                ? `Retry in ${retrySeconds}s`
+                : `Retry ${imagePath ? "scan" : "upload"}`}
+            </button>
+          )}
+        </div>
       )}
       {scan && (
         <div className="scan-status">

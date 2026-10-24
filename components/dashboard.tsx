@@ -9,6 +9,7 @@ import type { DashboardData } from "@/lib/dashboard-data";
 import { flushSync } from "react-dom";
 import { revealTheme } from "@/lib/theme-reveal";
 import {
+  QueryCache,
   QueryClient,
   QueryClientProvider,
   useQuery,
@@ -56,6 +57,7 @@ import { VaultSelect } from "./vault-select";
 import { Badge } from "./ui/badge";
 import { Skeleton } from "./ui/skeleton";
 import { Brand } from "./brand";
+import { toast } from "sonner";
 import { Auth } from "./auth";
 import { ThemeToggle } from "./theme-toggle";
 import { Input } from "./ui/input";
@@ -94,6 +96,23 @@ export function Dashboard({ initial }: { initial: DashboardData }) {
   const [queryClient] = useState(() => {
     const client = new QueryClient({
       defaultOptions: { queries: queryDefaults },
+      queryCache: new QueryCache({
+        onError: (error, query) => {
+          toast.error("Could not load your data", {
+            id: `query-${query.queryHash}`,
+            description: error.message,
+            action: {
+              label: "Retry",
+              onClick: () => {
+                void client.invalidateQueries({ queryKey: query.queryKey });
+              },
+            },
+          });
+        },
+        onSuccess: (_data, query) => {
+          toast.dismiss(`query-${query.queryHash}`);
+        },
+      }),
     });
     if (initial.session && initial.receipts) {
       client.setQueryData(qk.list(initial.session.user.id, initial.filters), {
@@ -142,7 +161,6 @@ function App({ initial }: { initial: DashboardData }) {
         .catch(() => undefined);
   }
   useEffect(() => () => themeTransition.current?.skipTransition(), []);
-  const [notice, setNotice] = useState("");
   const [editing, setEditing] = useState<Receipt | null | undefined>(undefined);
   const [detail, setDetail] = useState<Receipt | null>(null);
   const activeUid = useRef<string | null>(initial.session?.user.id ?? null);
@@ -322,8 +340,9 @@ function App({ initial }: { initial: DashboardData }) {
         await refresh();
       } else persist(local.filter((x) => x.id !== r.id));
       setDetail(null);
+      toast.success("Receipt deleted.");
     } catch {
-      setNotice("Could not delete this receipt. Please try again.");
+      toast.error("Could not delete this receipt. Please try again.");
     }
   }
   async function download() {
@@ -337,8 +356,9 @@ function App({ initial }: { initial: DashboardData }) {
       a.download = `receipts-${today()}.csv`;
       a.click();
       URL.revokeObjectURL(url);
+      toast.success("Receipts exported.");
     } catch (error) {
-      setNotice(
+      toast.error(
         error instanceof Error ? error.message : "Could not export receipts.",
       );
     }
@@ -487,22 +507,6 @@ function App({ initial }: { initial: DashboardData }) {
               enable cloud sync and AI scanning.
             </div>
           )}
-          {(notice || receiptsQuery.error || catsQuery.error) && (
-            <div role="alert" className="alert">
-              {notice ||
-                "Could not load your vault. Check your connection and try again."}
-              <button
-                aria-label="Dismiss message"
-                onClick={() => {
-                  setNotice("");
-                  void refresh();
-                  void catsQuery.refetch();
-                }}
-              >
-                <X size={16} />
-              </button>
-            </div>
-          )}
           {view === "Settings" ? (
             <SettingsPanel
               dark={dark}
@@ -512,7 +516,6 @@ function App({ initial }: { initial: DashboardData }) {
               download={download}
               cats={cats}
               session={session}
-              setNotice={setNotice}
             />
           ) : (
             <>
@@ -907,7 +910,7 @@ function App({ initial }: { initial: DashboardData }) {
                 setCategory("");
                 setView("Receipts");
                 setEditing(undefined);
-                setNotice("Receipt saved. Showing all saved receipts.");
+                toast.success("Receipt saved. Showing all saved receipts.");
               }}
             />
           )}

@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { toast } from "sonner";
 import { Download, Check } from "lucide-react";
 import { Button } from "./ui/button";
 
@@ -46,6 +47,7 @@ export function PwaProvider({ children }: { children: ReactNode }) {
     const complete = () => {
       setPrompt(null);
       setInstalled(true);
+      toast.success("App installed.");
     };
     window.addEventListener("beforeinstallprompt", offer);
     window.addEventListener("appinstalled", complete);
@@ -75,7 +77,6 @@ export function PwaProvider({ children }: { children: ReactNode }) {
 export function InstallApp() {
   const { installed, ios, prompt, clear } = useContext(InstallContext);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState("");
   return (
     <div className="settings-row install-app">
       <div>
@@ -92,7 +93,6 @@ export function InstallApp() {
         <p className="install-note">
           An internet connection is needed to access and save receipts.
         </p>
-        {notice && <p role="status">{notice}</p>}
       </div>
       {installed ? (
         <Check size={20} aria-label="Installed" />
@@ -105,13 +105,13 @@ export function InstallApp() {
               try {
                 await prompt.prompt();
                 const choice = await prompt.userChoice;
-                setNotice(
+                toast.info(
                   choice.outcome === "accepted"
                     ? "Follow your browser’s instructions to finish installing."
                     : "You can install later from your browser’s menu.",
                 );
               } catch {
-                setNotice("Open your browser’s menu to install the app.");
+                toast.info("Open your browser’s menu to install the app.");
               } finally {
                 clear();
                 setBusy(false);
